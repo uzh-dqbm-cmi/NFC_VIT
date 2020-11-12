@@ -263,6 +263,7 @@ def train(args, train_dataset, model, label2id, dev_dataset=None, cv_idx=0):
                      dev_accuracy,
                      dev_loss
                      ))
+
                 # Save model checkpoint
                 # Saving best-practices: if you use defaults names for the model, you can reload it using from_pretrained()
                 if not os.path.exists(os.path.join(args.output_dir,str(cv_idx))):
@@ -402,28 +403,28 @@ def evaluate(args, eval_dataset, model, label2id,  prefix=""):
         #else:
         #    result = xray_compute_metrics(eval_task, preds, out_label_ids, label2id=label2id)
         results.update(result)
-        if 'test' in prefix:
-            import pandas as pd
-            output_eval_file = os.path.join(eval_output_dir, "eval_results_{}.txt".format(prefix))
-            if os.path.exists(output_eval_file):
-                append_write = 'a'  # append if already exists
-            else:
-                append_write = 'w'  # make a new file if not
-            with open(output_eval_file, append_write) as writer:
-                logger.info("***** Eval results {} *****".format(prefix))
-                for key in sorted(result.keys()):
-                    logger.info("  %s = %s", key, str(result[key]))
-                    writer.write("%s = %s\n" % (key, str(result[key])))
 
-                for task in labels.keys():
-                    _preds, _labels = preds[task], labels[task]
-                    _preds = np.argmax(_preds, axis=1)
-                    y_actul = pd.Series(_labels, name='Actual')
-                    y_pred = pd.Series(_preds, name='Predicted')
-                    logger.info("***** Confusion Matrix for  {} *****".format(task))
-                    df_confusion = pd.crosstab(y_actul, y_pred, rownames=['Actual'], colnames=['Predicted'],
-                                               margins=True)
-                    writer.write(df_confusion)
+        import pandas as pd
+        output_eval_file = os.path.join(eval_output_dir, "eval_results_{}.txt".format(prefix))
+        if os.path.exists(output_eval_file):
+            append_write = 'a'  # append if already exists
+        else:
+            append_write = 'w'  # make a new file if not
+        with open(output_eval_file, append_write) as writer:
+            logger.info("***** Eval results {} *****".format(prefix))
+            for key in sorted(result.keys()):
+                logger.info("  %s = %s", key, str(result[key]))
+                writer.write("%s = %s\n" % (key, str(result[key])))
+
+            for task in labels.keys():
+                _preds, _labels = preds[task], labels[task]
+                _preds = np.argmax(_preds, axis=1)
+                y_actul = pd.Series(_labels, name='Actual')
+                y_pred = pd.Series(_preds, name='Predicted')
+                writer.write("***** Confusion Matrix for  {} *****".format(task))
+                df_confusion = pd.crosstab(y_actul, y_pred, rownames=['Actual'], colnames=['Predicted'],
+                                           margins=True)
+                writer.write(df_confusion.to_string())
 
     return results, eval_loss
 
