@@ -653,8 +653,7 @@ def main():
                     model_dict.update(pretrained_dict)
                     # 3. load the new state dict
                     model.load_state_dict(model_dict)
-                    logger.info(
-                        f"model:{model.__class__.__name__} weights were initialized from {args.model_name_or_path}.\n")
+                    logger.info(f"model:{model.__class__.__name__} weights were initialized from {args.model_name_or_path}.\n")
 
             else:
                     model = classifier(num_labels_per_task={c: 4 for c in label_list.keys()})
