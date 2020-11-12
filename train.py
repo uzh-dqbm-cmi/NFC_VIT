@@ -372,7 +372,7 @@ def evaluate(args, eval_dataset, model, label2id,  prefix=""):
                 label_ids = {t: batch[-1][:, i] for i, t in enumerate(label2id)}
                 label_ids = {t: l.to('cpu').numpy() for t, l in label_ids.items()}
 
-                if len(preds) ==0:
+                if len(preds) == 0:
                     if args.multiTask:
                         for task in label_ids.keys():
                             preds[task] = logits[task].tolist()
@@ -392,27 +392,38 @@ def evaluate(args, eval_dataset, model, label2id,  prefix=""):
                 nb_eval_examples += batch[0].size(0)
                 nb_eval_steps += 1
 
-        eval_accuracy,rs = multi_task_metrics(preds, labels)
+        eval_accuracy = multi_task_metrics(preds, labels)
         eval_loss = eval_loss / nb_eval_steps
+
         result = {'eval_loss': eval_loss,
-                  'eval_accuracy': eval_accuracy,
-                  'rs':rs}
+                  'eval_accuracy': eval_accuracy}
+
 
         #else:
         #    result = xray_compute_metrics(eval_task, preds, out_label_ids, label2id=label2id)
         results.update(result)
+        if 'test' in prefix:
+            import pandas as pd
+            output_eval_file = os.path.join(eval_output_dir, "eval_results_{}.txt".format(prefix))
+            if os.path.exists(output_eval_file):
+                append_write = 'a'  # append if already exists
+            else:
+                append_write = 'w'  # make a new file if not
+            with open(output_eval_file, append_write) as writer:
+                logger.info("***** Eval results {} *****".format(prefix))
+                for key in sorted(result.keys()):
+                    logger.info("  %s = %s", key, str(result[key]))
+                    writer.write("%s = %s\n" % (key, str(result[key])))
 
-        output_eval_file = os.path.join(eval_output_dir, "eval_results_{}.txt".format(prefix))
-        if os.path.exists(output_eval_file):
-            append_write = 'a'  # append if already exists
-        else:
-            append_write = 'w'  # make a new file if not
-
-        with open(output_eval_file, append_write) as writer:
-            logger.info("***** Eval results {} *****".format(prefix))
-            for key in sorted(result.keys()):
-                logger.info("  %s = %s", key, str(result[key]))
-                writer.write("%s = %s\n" % (key, str(result[key])))
+                for task in labels.keys():
+                    _preds, _labels = preds[task], labels[task]
+                    _preds = np.argmax(_preds, axis=1)
+                    y_actul = pd.Series(_labels, name='Actual')
+                    y_pred = pd.Series(_preds, name='Predicted')
+                    logger.info("***** Confusion Matrix for  {} *****".format(task))
+                    df_confusion = pd.crosstab(y_actul, y_pred, rownames=['Actual'], colnames=['Predicted'],
+                                               margins=True)
+                    writer.write(df_confusion)
 
     return results, eval_loss
 
@@ -657,6 +668,7 @@ def main():
 
             else:
                     model = classifier(num_labels_per_task={c: 4 for c in label_list.keys()})
+
             model.to(args.device)
             logger.info(" Cross-Validation: %s", cv_idx)
             # for dev
@@ -668,8 +680,8 @@ def main():
             train_dataset = train_dev_dataset.select_from_indices(list(train_idx), mode='train')
             dev_dataset = train_dev_dataset.select_from_indices(list(dev_idx), mode='dev')
 
-            global_step, tr_loss , auc= train(args, train_dataset, model, label_list, dev_dataset=dev_dataset,cv_idx=cv_idx)
-            logger.info(" global_step = %s, average loss = %s, best auc on dev= %s", global_step, tr_loss, auc)
+            global_step, tr_loss , best_loss= train(args, train_dataset, model, label_list, dev_dataset=dev_dataset,cv_idx=cv_idx)
+            logger.info(" global_step = %s, average loss = %s, best loss on dev= %s", global_step, tr_loss, best_loss)
 
             # Evaluation
             results = {}
@@ -698,9 +710,7 @@ def main():
                     model.load_state_dict(model_dict)
                     logger.info(
                         f"model:{model.__class__.__name__} weights were initialized from {checkpoint}.\n")
-
                     model.to(args.device)
-
                     eval_dataset = image_datasets.select_from_indices(list(test_idx), mode='test')
                     result, _= evaluate(args, eval_dataset, model, label_list, prefix=prefix)
                     result = dict((k + "_{}".format(global_step), v) for k, v in result.items())
