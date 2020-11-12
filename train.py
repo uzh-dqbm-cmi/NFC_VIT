@@ -275,20 +275,6 @@ def train(args, train_dataset, model, label2id, dev_dataset=None, cv_idx=0):
                     model.module if hasattr(model, "module") else model
                 )  # Take care of distributed/parallel training
                 torch.save(model_to_save.state_dict(), os.path.join(args.output_dir,str(cv_idx), "pytorch_model.bin"))
-
-                # CONFIG_NAME = "config.json"
-                # output_config_file = os.path.join(args.output_dir,str(cv_idx), CONFIG_NAME)
-
-                # with open(output_config_file, "w", encoding="utf-8") as writer:
-                #     serializable_config_dict = {}
-                #     # only serialize values that differ from the default config
-                #     for key, value in model.config.to_diff_dict().items():
-                #         serializable_config_dict[key] = value
-                #     writer.write(json.dumps(serializable_config_dict, indent=2, sort_keys=True) + "\n")
-                #
-                # logger.info("Configuration saved in {}".format(output_config_file))
-
-                # Good practice: save your training arguments together with the trained model
                 torch.save(args, os.path.join(args.output_dir,str(cv_idx), "training_args.bin"))
             else:
                 print('(loss: %.4f, fold: %d, epoch: %d, dev acc = %.4f, dev loss =  %.4f), without saving...' %
@@ -316,7 +302,6 @@ def evaluate(args, eval_dataset, model, label2id,  prefix=""):
 
     results = {}
     for eval_task, eval_output_dir in zip(eval_task_names, eval_outputs_dirs):
-    #eval_dataset = load_and_cache_examples(args, eval_task, tokenizer, evaluate=True)
         if not os.path.exists(eval_output_dir) and args.local_rank in [-1, 0]:
             os.makedirs(eval_output_dir)
 
@@ -644,7 +629,7 @@ def main():
 
     if args.do_train:
         image_datasets, groups = load_and_cache_examples(args, imageDataset=imageDataset)
-        gss = GroupShuffleSplit(n_splits=5, train_size=.7, random_state=42)
+        gss = GroupShuffleSplit(n_splits=5, train_size=.6, random_state=42)
         results_cv = defaultdict(list)
         for cv_idx, (train_dev_idx, test_idx) in enumerate(gss.split(range(len(image_datasets)), groups=groups)):
             if args.model_name_or_path:
@@ -673,7 +658,7 @@ def main():
             model.to(args.device)
             logger.info(" Cross-Validation: %s", cv_idx)
             # for dev
-            sub_gss = GroupShuffleSplit(n_splits=1, train_size=.8, random_state=42)
+            sub_gss = GroupShuffleSplit(n_splits=1, train_size=.7, random_state=42)
             train_dev_dataset = image_datasets.select_from_indices(list(train_dev_idx), mode='train')
             sub_groups= np.array([f.identifier for f in train_dev_dataset.features])
 
