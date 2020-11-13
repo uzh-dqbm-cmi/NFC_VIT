@@ -386,7 +386,7 @@ def evaluate(args, eval_dataset, model, label2id,  prefix=""):
                             preds.extend(logits)
                             labels.extend(label_ids)
                 #tmp_eval_accuracy, rs = multi_task_metrics(logits, label_ids)
-                if args.multiTask
+                if args.multiTask:
                     eval_loss += tmp_eval_loss.item()
                 else:
                     eval_loss += tmp_eval_loss.mean().item()
