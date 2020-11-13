@@ -13,6 +13,7 @@ class DenseNet121(nn.Module):
 
     def forward(self, x):
         x = self.densenet121(x)
+
         return x
 
 
@@ -42,6 +43,7 @@ class ClassificationModel(nn.Module):
         # image encoder
         # self.dropout = nn.Dropout()
         self.visual_features = DenseNet121(self.num_labels)
+        self.dropout = nn.Dropout(p=0.5)
 
     def forward(
         self,
@@ -52,6 +54,9 @@ class ClassificationModel(nn.Module):
     ):
 
         logits= self.visual_features(img)
+
+        logits=self.dropout(logits)
+        
         if n_crops is not None:
             logits = logits.view(batch_size, n_crops, -1).mean(1)
 
