@@ -56,7 +56,7 @@ class ClassificationModel(nn.Module):
         logits= self.visual_features(img)
 
         logits=self.dropout(logits)
-        
+
         if n_crops is not None:
             logits = logits.view(batch_size, n_crops, -1).mean(1)
 
