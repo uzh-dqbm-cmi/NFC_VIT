@@ -390,6 +390,7 @@ def evaluate(args, eval_dataset, model, label2id,  prefix=""):
                 #eval_accuracy += tmp_eval_accuracy
                 nb_eval_examples += batch[0].size(0)
                 nb_eval_steps += 1
+        eval_loss = eval_loss / nb_eval_steps
         if args.multiTask:
             eval_accuracy = multi_task_metrics(preds, labels)
             result = {'eval_loss': eval_loss,
@@ -399,8 +400,7 @@ def evaluate(args, eval_dataset, model, label2id,  prefix=""):
             result = {'eval_loss': eval_loss,
                        'eval_auc': eval_auc}
 
-        eval_loss = eval_loss / nb_eval_steps
-        results.update(result)
+        results.update()
 
 
         output_eval_file = os.path.join(eval_output_dir, "eval_results_{}.txt".format(prefix))
