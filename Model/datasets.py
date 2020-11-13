@@ -28,14 +28,14 @@ NORMALIZAE = transforms.Normalize(IMAGENET_RGB_MEAN, IMAGENET_RGB_SD)
 
 # ten crop in test and validation provide 10 more view of image which it seems not correct to do in testing
 TRANSFORM_TEST_TEN_CROP=transforms.Compose([
-    transforms.Resize(512),
-    transforms.TenCrop(512),
+    transforms.Resize(2000),
+    transforms.TenCrop(1500),
     transforms.Lambda(lambda crops: torch.stack([transforms.ToTensor()(crop) for crop in crops])),
     transforms.Lambda(lambda crops: torch.stack([NORMALIZAE(crop) for crop in crops])),
     ])
 
 TRANSFORM_TRAIN=transforms.Compose([
-    transforms.RandomResizedCrop(512),
+    transforms.RandomResizedCrop(1500),
     transforms.RandomHorizontalFlip(),
     ImageNetPolicy(),
     transforms.ToTensor(),
