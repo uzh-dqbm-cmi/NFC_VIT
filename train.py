@@ -427,16 +427,15 @@ def evaluate(args, eval_dataset, model, label2id,  prefix=""):
                                                margins=True)
                     writer.write(df_confusion.to_string())
             else:
-                pass
-                # def sigmoid(x):
-                #     return 1 / (1 + math.exp(-x))
-                # sigmoid_v = np.vectorize(sigmoid)
-                #
-                # preds=[sigmoid_v(p) for p in preds]
-                # preds=[(p >= 0.5).astype(int) for p in preds]
-                # cm = sklearn.metrics.multilabel_confusion_matrix(labels, preds)
-                # writer.write(np.array2string(cm))
-                # writer.write(sklearn.metrics.classification_report(labels,preds,target_names=label2id.keys()))
+                def sigmoid(x):
+                    return 1 / (1 + math.exp(-x))
+                sigmoid_v = np.vectorize(sigmoid)
+
+                preds=[sigmoid_v(p) for p in preds]
+                preds=[(p >= 0.5).astype(int) for p in preds]
+                cm = sklearn.metrics.multilabel_confusion_matrix(labels, preds)
+                writer.write(np.array2string(cm))
+                writer.write(sklearn.metrics.classification_report(labels,preds,target_names=label2id.keys()))
 
     return results, eval_loss
 
@@ -683,7 +682,7 @@ def main():
             model.to(args.device)
             logger.info(" Cross-Validation: %s", cv_idx)
             # for dev
-            sub_gss = GroupShuffleSplit(n_splits=1, train_size=.8, random_state=42)
+            sub_gss = GroupShuffleSplit(n_splits=1, train_size=.7, random_state=42)
             train_dev_dataset = image_datasets.select_from_indices(list(train_dev_idx), mode='train')
             sub_groups= np.array([f.identifier for f in train_dev_dataset.features])
 
