@@ -389,7 +389,8 @@ def evaluate(args, eval_dataset, model, label2id,  prefix=""):
 
                 #eval_accuracy += tmp_eval_accuracy
                 nb_eval_examples += batch[0].size(0)
-                nb_eval_steps += 1
+            nb_eval_steps += 1
+
         eval_loss = eval_loss / nb_eval_steps
 
         if args.multiTask:
@@ -405,6 +406,7 @@ def evaluate(args, eval_dataset, model, label2id,  prefix=""):
 
 
         output_eval_file = os.path.join(eval_output_dir, "eval_results_{}.txt".format(prefix))
+
         if os.path.exists(output_eval_file):
             append_write = 'a'  # append if already exists
         else:
