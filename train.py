@@ -653,7 +653,7 @@ def main():
 
     if args.do_train:
         image_datasets, groups = load_and_cache_examples(args, imageDataset=imageDataset)
-        gss = GroupShuffleSplit(n_splits=5, train_size=.6, random_state=42)
+        gss = GroupShuffleSplit(n_splits=5, train_size=.7, random_state=42)
         results_cv = defaultdict(list)
         for cv_idx, (train_dev_idx, test_idx) in enumerate(gss.split(range(len(image_datasets)), groups=groups)):
             if args.model_name_or_path:
@@ -682,7 +682,7 @@ def main():
             model.to(args.device)
             logger.info(" Cross-Validation: %s", cv_idx)
             # for dev
-            sub_gss = GroupShuffleSplit(n_splits=1, train_size=.8, random_state=42)
+            sub_gss = GroupShuffleSplit(n_splits=1, train_size=.9, random_state=42)
             train_dev_dataset = image_datasets.select_from_indices(list(train_dev_idx), mode='train')
             sub_groups= np.array([f.identifier for f in train_dev_dataset.features])
 
