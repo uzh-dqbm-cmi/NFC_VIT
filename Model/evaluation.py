@@ -30,7 +30,25 @@ def multi_task_metrics(out_by_task, labels_by_task):
         #roc_auc=roc_auc_score(labels, probas_pred)
         #auc_pr = AUC(recall, precision)
         #results[task] = {'auc_pr': auc_pr,'roc_aux':0, 'accuracy_score':accuracy}
-
-
     return accuracies/len(out_by_task)
 
+def multi_label_metrics(preds, labels, label2id):
+    assert len(preds) == len(labels)
+    results = {}
+    roc_auc = []
+    pr_auc=[]
+    data_gt = np.array([l.tolist() for l in labels])
+    data_pd = np.array([p.tolist() for p in preds])
+    for label_name, i in label2id.items():
+        auc = roc_auc_score(data_gt[:, i], data_pd[:, i])
+        #probas_pred = np.max(softmax(data_pd[:, i], axis=1), axis=1)
+        #precision, recall, thresholds = precision_recall_curve(y_true=labels, probas_pred=probas_pred)
+        #auc_pr = AUC(recall, precision)
+        results[label_name] = {'auc': auc}
+        roc_auc.append(auc)
+        #pr_auc.append(auc_pr)
+    roc_auc = np.mean(roc_auc)
+    #pr_auc=np.mean(pr_auc)
+    results["auc"] = roc_auc
+    #results["pr_auc"] = pr_auc
+    return results, roc_auc

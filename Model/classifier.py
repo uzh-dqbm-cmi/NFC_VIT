@@ -64,7 +64,7 @@ class ClassificationModel(nn.Module):
                 loss_fct = MSELoss()
                 loss = loss_fct(logits.view(-1), labels.view(-1))
             else:
-                loss_fct = CrossEntropyLoss()
+                loss_fct = BCEWithLogitsLoss()
                 loss = loss_fct(logits.view(-1, self.num_labels), labels.float())
             outputs = (loss,) + outputs
         return outputs  # (loss), logits, (hidden_states), (attentions)
@@ -77,7 +77,6 @@ class MultiTaskClassificationModel(nn.Module):
         # image encoder
         #self.dropout = nn.Dropout()
         self.visual_features = MultiTaskDenseNet121(num_labels_per_task)
-
 
     def forward(
         self,

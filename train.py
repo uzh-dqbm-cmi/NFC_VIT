@@ -26,8 +26,10 @@ sys.path.append("..")
 import argparse
 import glob
 import logging
-import os, json
+import os, math
 import random
+import pandas as pd
+import sklearn
 
 import numpy as np
 import torch
@@ -41,7 +43,7 @@ from Model.processors import image_processors as processors
 from Model.datasets import image_datasets as datasets
 
 from collections import defaultdict
-from Model.evaluation import multi_task_metrics
+from Model.evaluation import multi_task_metrics,multi_label_metrics
 
 try:
     from torch.utils.tensorboard import SummaryWriter
@@ -52,6 +54,10 @@ from transformers import WEIGHTS_NAME,  AdamW, get_linear_schedule_with_warmup
 
 logger = logging.getLogger(__name__)
 
+
+def sigmoid(x):
+    return 1 / (1 + math.exp(-x))
+sigmoid_v = np.vectorize(sigmoid)
 
 def set_seed(args):
     random.seed(args.seed)
@@ -250,17 +256,23 @@ def train(args, train_dataset, model, label2id, dev_dataset=None, cv_idx=0):
             # and epoch_num >10
         if args.early_stopping:
             results, dev_loss = evaluate(args, dev_dataset, model, label2id, prefix="dev")
-            dev_accuracy = results['eval_accuracy']
+
+            # multi-task
+            if args.multiTask:
+                dev_accuracy_auc = results['eval_accuracy']
+            else:
+                dev_accuracy_auc = results['eval_auc']
+
             if dev_loss < best_loss:
                 patience_count = 0
                 best_loss = dev_loss
                 # save  model
                 print(
-                    '(loss: %.4f,fold: %d, epoch: %d, dev acc = %.4f, dev loss =  %.4f), saving...' %
+                    '(loss: %.4f,fold: %d, epoch: %d, dev acc/auc = %.4f, dev loss =  %.4f), saving...' %
                     (epoch_loss / loss_cnt,
                      cv_idx,
                      epoch_num,
-                     dev_accuracy,
+                     dev_accuracy_auc,
                      dev_loss
                      ))
 
@@ -277,11 +289,11 @@ def train(args, train_dataset, model, label2id, dev_dataset=None, cv_idx=0):
                 torch.save(model_to_save.state_dict(), os.path.join(args.output_dir,str(cv_idx), "pytorch_model.bin"))
                 torch.save(args, os.path.join(args.output_dir,str(cv_idx), "training_args.bin"))
             else:
-                print('(loss: %.4f, fold: %d, epoch: %d, dev acc = %.4f, dev loss =  %.4f), without saving...' %
+                print('(loss: %.4f, fold: %d, epoch: %d, dev acc.auc = %.4f, dev loss =  %.4f), without saving...' %
                       (epoch_loss / loss_cnt,
                        cv_idx,
                        epoch_num,
-                       dev_accuracy,
+                       dev_accuracy_auc,
                        dev_loss
                        ))
                 patience_count += 1
@@ -320,8 +332,8 @@ def evaluate(args, eval_dataset, model, label2id,  prefix=""):
         logger.info("  Batch size = %d", args.eval_batch_size)
         eval_loss = 0.0
         nb_eval_steps = 0
-        preds = {}
-        labels = {}
+        preds = {} if args.multiTask else []
+        labels = {} if args.multiTask else []
 
         all_logits = {t: [] for t in label2id}
         eval_loss, eval_accuracy = 0, 0
@@ -338,7 +350,6 @@ def evaluate(args, eval_dataset, model, label2id,  prefix=""):
 
             bs, n_crops, c, h, w = batch[0].size()
             with torch.no_grad():
-
                 num_tasks = label_ids.size()[-1]
 
                 inputs = {"img": batch[0].view(-1,c,h,w),
@@ -350,13 +361,13 @@ def evaluate(args, eval_dataset, model, label2id,  prefix=""):
 
                 if args.multiTask:
                     tmp_eval_loss = sum(tmp_eval_loss.values()) / num_tasks
+                    logits = {t: lt.detach().cpu().numpy() for t, lt in logits.items()}
+                    label_ids = {t: batch[-1][:, i] for i, t in enumerate(label2id)}
+                    label_ids = {t: l.to('cpu').numpy() for t, l in label_ids.items()}
+                else:
+                    logits=[lt.detach().cpu().numpy() for lt in logits]
+                    label_ids=[l.to('cpu').numpy() for  l in label_ids]
 
-                logits = {t: lt.detach().cpu().numpy() for t, lt in logits.items()}
-                for t in label2id:
-                    all_logits[t].extend(list(logits[t]))
-
-                label_ids = {t: batch[-1][:, i] for i, t in enumerate(label2id)}
-                label_ids = {t: l.to('cpu').numpy() for t, l in label_ids.items()}
 
                 if len(preds) == 0:
                     if args.multiTask:
@@ -364,32 +375,35 @@ def evaluate(args, eval_dataset, model, label2id,  prefix=""):
                             preds[task] = logits[task].tolist()
                             labels[task] = label_ids[task].tolist()
                     else:
-                        pass
+                        preds=logits
+                        labels=label_ids
                 else:
                     if args.multiTask:
                         for task in label_ids.keys():
                             preds[task].extend(logits[task].tolist())
                             labels[task].extend(label_ids[task].tolist())
-                        pass
+                    else:
+                            preds.extend(logits)
+                            labels.extend(label_ids)
                 #tmp_eval_accuracy, rs = multi_task_metrics(logits, label_ids)
 
                 eval_loss += tmp_eval_loss.item()
                 #eval_accuracy += tmp_eval_accuracy
                 nb_eval_examples += batch[0].size(0)
                 nb_eval_steps += 1
+        if args.multiTask:
+            eval_accuracy = multi_task_metrics(preds, labels)
+            result = {'eval_loss': eval_loss,
+                      'eval_accuracy': eval_accuracy}
+        else:
+            _, eval_auc=multi_label_metrics(preds, labels, label2id)
+            result = {'eval_loss': eval_loss,
+                       'eval_auc': eval_auc}
 
-        eval_accuracy = multi_task_metrics(preds, labels)
         eval_loss = eval_loss / nb_eval_steps
-
-        result = {'eval_loss': eval_loss,
-                  'eval_accuracy': eval_accuracy}
-
-
-        #else:
-        #    result = xray_compute_metrics(eval_task, preds, out_label_ids, label2id=label2id)
         results.update(result)
 
-        import pandas as pd
+
         output_eval_file = os.path.join(eval_output_dir, "eval_results_{}.txt".format(prefix))
         if os.path.exists(output_eval_file):
             append_write = 'a'  # append if already exists
@@ -400,16 +414,25 @@ def evaluate(args, eval_dataset, model, label2id,  prefix=""):
             for key in sorted(result.keys()):
                 logger.info("  %s = %s", key, str(result[key]))
                 writer.write("%s = %s\n" % (key, str(result[key])))
+            if args.multiTask:
+                for task in labels.keys():
+                    _preds, _labels = preds[task], labels[task]
+                    _preds = np.argmax(_preds, axis=1)
+                    y_actul = pd.Series(_labels, name='Actual')
+                    y_pred = pd.Series(_preds, name='Predicted')
+                    writer.write("***** Confusion Matrix for  {} *****".format(task))
+                    df_confusion = pd.crosstab(y_actul, y_pred, rownames=['Actual'], colnames=['Predicted'],
+                                               margins=True)
+                    writer.write(df_confusion.to_string())
+            else:
 
-            for task in labels.keys():
-                _preds, _labels = preds[task], labels[task]
-                _preds = np.argmax(_preds, axis=1)
-                y_actul = pd.Series(_labels, name='Actual')
-                y_pred = pd.Series(_preds, name='Predicted')
-                writer.write("***** Confusion Matrix for  {} *****".format(task))
-                df_confusion = pd.crosstab(y_actul, y_pred, rownames=['Actual'], colnames=['Predicted'],
-                                           margins=True)
-                writer.write(df_confusion.to_string())
+
+
+                preds=[sigmoid_v(p) for p in preds]
+                preds=[(p >= 0.5).astype(int) for p in preds]
+                cm = sklearn.metrics.multilabel_confusion_matrix(labels, preds)
+                writer.write(np.array2string(cm))
+                writer.write(sklearn.metrics.classification_report(labels,preds,target_names=label2id.keys()))
 
     return results, eval_loss
 
@@ -613,8 +636,6 @@ def main():
         torch.distributed.barrier()  # Make sure only the first process in distributed training will download model & vocab
 
 
-
-
     classifier=ClassifierClass["multi-task" if args.multiTask else "multi-label"]
 
 
@@ -653,12 +674,12 @@ def main():
                     logger.info(f"model:{model.__class__.__name__} weights were initialized from {args.model_name_or_path}.\n")
 
             else:
-                    model = classifier(num_labels_per_task={c: 4 for c in label_list.keys()})
+                model = classifier(num_labels_per_task={c: 4 for c in label_list.keys()})
 
             model.to(args.device)
             logger.info(" Cross-Validation: %s", cv_idx)
             # for dev
-            sub_gss = GroupShuffleSplit(n_splits=1, train_size=.7, random_state=42)
+            sub_gss = GroupShuffleSplit(n_splits=1, train_size=.8, random_state=42)
             train_dev_dataset = image_datasets.select_from_indices(list(train_dev_idx), mode='train')
             sub_groups= np.array([f.identifier for f in train_dev_dataset.features])
 
