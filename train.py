@@ -682,7 +682,7 @@ def main():
             model.to(args.device)
             logger.info(" Cross-Validation: %s", cv_idx)
             # for dev
-            sub_gss = GroupShuffleSplit(n_splits=1, train_size=.9, random_state=42)
+            sub_gss = GroupShuffleSplit(n_splits=1, train_size=.8, random_state=42)
             train_dev_dataset = image_datasets.select_from_indices(list(train_dev_idx), mode='train')
             sub_groups= np.array([f.identifier for f in train_dev_dataset.features])
 
