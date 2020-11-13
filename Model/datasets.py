@@ -34,6 +34,15 @@ TRANSFORM_TEST_TEN_CROP=transforms.Compose([
     transforms.Lambda(lambda crops: torch.stack([NORMALIZAE(crop) for crop in crops])),
     ])
 
+
+TRANSFORM_TEST=transforms.Compose([
+    transforms.Resize((224, 224)),
+    transforms.CenterCrop(224),
+    transforms.ToTensor(),
+    transforms.Normalize(IMAGENET_RGB_MEAN, IMAGENET_RGB_SD)
+
+    ])
+
 TRANSFORM_TRAIN=transforms.Compose([
     transforms.RandomResizedCrop(224),
     transforms.RandomHorizontalFlip(),
