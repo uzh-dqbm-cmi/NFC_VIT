@@ -398,9 +398,10 @@ def evaluate(args, eval_dataset, model, label2id,  prefix=""):
             result = {'eval_loss': eval_loss,
                       'eval_accuracy': eval_accuracy}
         else:
-            _, eval_auc = multi_label_metrics(preds, labels, label2id)
+            rs, eval_auc = multi_label_metrics(preds, labels, label2id)
             result = {'eval_loss': eval_loss,
-                       'eval_auc': eval_auc}
+                       'eval_auc': eval_auc,
+                      'auc_per_class':rs}
 
         results.update(result)
 
