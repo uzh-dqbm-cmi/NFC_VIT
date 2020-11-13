@@ -55,9 +55,7 @@ from transformers import WEIGHTS_NAME,  AdamW, get_linear_schedule_with_warmup
 logger = logging.getLogger(__name__)
 
 
-def sigmoid(x):
-    return 1 / (1 + math.exp(-x))
-sigmoid_v = np.vectorize(sigmoid)
+
 
 def set_seed(args):
     random.seed(args.seed)
@@ -386,10 +384,8 @@ def evaluate(args, eval_dataset, model, label2id,  prefix=""):
                             preds.extend(logits)
                             labels.extend(label_ids)
                 #tmp_eval_accuracy, rs = multi_task_metrics(logits, label_ids)
-                if args.multiTask:
-                    eval_loss += tmp_eval_loss.item()
-                else:
-                    eval_loss += tmp_eval_loss.mean().item()
+
+                eval_loss += tmp_eval_loss.item()
 
                 #eval_accuracy += tmp_eval_accuracy
                 nb_eval_examples += batch[0].size(0)
@@ -399,7 +395,7 @@ def evaluate(args, eval_dataset, model, label2id,  prefix=""):
             result = {'eval_loss': eval_loss,
                       'eval_accuracy': eval_accuracy}
         else:
-            _, eval_auc=multi_label_metrics(preds, labels, label2id)
+            _, eval_auc = multi_label_metrics(preds, labels, label2id)
             result = {'eval_loss': eval_loss,
                        'eval_auc': eval_auc}
 
@@ -428,8 +424,9 @@ def evaluate(args, eval_dataset, model, label2id,  prefix=""):
                                                margins=True)
                     writer.write(df_confusion.to_string())
             else:
-
-
+                def sigmoid(x):
+                    return 1 / (1 + math.exp(-x))
+                sigmoid_v = np.vectorize(sigmoid)
 
                 preds=[sigmoid_v(p) for p in preds]
                 preds=[(p >= 0.5).astype(int) for p in preds]
