@@ -111,7 +111,7 @@ class ViTransferClassification(nn.Module):
         super(ViTransferClassification, self).__init__()
         self.num_labels = len(num_labels_per_task)
         # image encoder
-        self.visual_features = viTransformer.vit_base_patch16_224(pretrained=True, num_classes=self.num_labels)
+        self.visual_features = viTransformer.vit_large_patch16_224(pretrained=True, num_classes=self.num_labels)
 
     def forward(
         self,
