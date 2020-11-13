@@ -3,6 +3,8 @@ import torchvision
 import torch
 from torch.nn import CrossEntropyLoss, MSELoss, BCEWithLogitsLoss
 import torch.nn.functional as F
+from Model import viTransformer
+
 
 class DenseNet121(nn.Module):
     def __init__(self, num_labels):
@@ -104,7 +106,40 @@ class MultiTaskClassificationModel(nn.Module):
         return outputs  # (loss), logits, (hidden_states), (attentions)
 
 
+class ViTransferClassification(nn.Module):
+    def __init__(self, num_labels_per_task):
+        super(ViTransferClassification, self).__init__()
+        self.num_labels = len(num_labels_per_task)
+        # image encoder
+        self.visual_features = viTransformer.vit_base_patch16_224(pretrained=True, num_classes=self.num_labels)
+
+    def forward(
+        self,
+        img=None,
+        labels=None,
+        n_crops=None,
+        batch_size=None,
+    ):
+        logits = self.visual_features(img)
+        if n_crops is not None:
+            logits = logits.view(batch_size, n_crops, -1).mean(1)
+
+        # logits = self.fc(img_feat_)
+        outputs = (logits,)  # add hidden states and attention if they are here
+
+        if labels is not None:
+            if self.num_labels == 1:
+                #  We are doing regression
+                loss_fct = MSELoss()
+                loss = loss_fct(logits.view(-1), labels.view(-1))
+            else:
+                loss_fct = BCEWithLogitsLoss()
+                loss = loss_fct(logits.view(-1, self.num_labels), labels.float())
+            outputs = (loss,) + outputs
+        return outputs
+
+
 ClassifierClass={
     "multi-task":MultiTaskClassificationModel,
-    "multi-label":ClassificationModel
+    "multi-label":ViTransferClassification
 }
