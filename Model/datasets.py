@@ -59,7 +59,7 @@ class Split(Enum):
 
 def image_to_tensor_ten_crop_auto_augment(img_path, mode=None):
     im_rgb = Image.open(img_path).convert('RGB')
-    img_trs = TRANSFORM_TRAIN(im_rgb) if (mode == Split.train) else TRANSFORM_TEST(im_rgb)
+    img_trs = TRANSFORM_TRAIN(im_rgb) if (mode == Split.train) else TRANSFORM_TEST_TEN_CROP(im_rgb)
     #print(img_trs.size())
     return img_trs
 
