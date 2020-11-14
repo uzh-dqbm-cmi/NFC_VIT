@@ -346,7 +346,11 @@ def evaluate(args, eval_dataset, model, label2id,  prefix=""):
             else:
                 label_ids = batch[1]
 
-            bs, n_crops, c, h, w = batch[0].size()
+            if len(batch[0].size())>5:
+                bs, n_crops, c, h, w = batch[0].size()
+            else:
+                bs, c, h, w = batch[0].size()
+                n_crops=None
             with torch.no_grad():
                 num_tasks = label_ids.size()[-1]
 
