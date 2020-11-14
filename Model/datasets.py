@@ -46,7 +46,7 @@ TRANSFORM_TEST=transforms.Compose([
 TRANSFORM_TRAIN=transforms.Compose([
     transforms.RandomResizedCrop(224),
     transforms.RandomHorizontalFlip(),
-    #ImageNetPolicy(),
+    ImageNetPolicy(),
     transforms.ToTensor(),
     transforms.Normalize(IMAGENET_RGB_MEAN, IMAGENET_RGB_SD)
     ])
