@@ -346,7 +346,7 @@ def evaluate(args, eval_dataset, model, label2id,  prefix=""):
             else:
                 label_ids = batch[1]
 
-            if len(batch[0].size())>5:
+            if len(batch[0].size())>4:
                 bs, n_crops, c, h, w = batch[0].size()
             else:
                 bs, c, h, w = batch[0].size()
