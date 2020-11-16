@@ -433,15 +433,15 @@ def evaluate(args, eval_dataset, model, label2id,  prefix=""):
                     writer.write(df_confusion.to_string())
             else:
                 pass
-                # def sigmoid(x):
-                #     return 1 / (1 + math.exp(-x))
-                # sigmoid_v = np.vectorize(sigmoid)
-                #
-                # preds=[sigmoid_v(p) for p in preds]
-                # preds=[(p >= 0.5).astype(int) for p in preds]
-                # cm = sklearn.metrics.multilabel_confusion_matrix(labels, preds)
-                # writer.write(np.array2string(cm))
-                # writer.write(sklearn.metrics.classification_report(labels,preds,target_names=label2id.keys()))
+                def sigmoid(x):
+                    return 1 / (1 + math.exp(-x))
+                sigmoid_v = np.vectorize(sigmoid)
+
+                preds=[sigmoid_v(p) for p in preds]
+                preds=[(p >= 0.5).astype(int) for p in preds]
+                cm = sklearn.metrics.multilabel_confusion_matrix(labels, preds)
+                writer.write(np.array2string(cm))
+                writer.write(sklearn.metrics.classification_report(labels,preds,target_names=label2id.keys()))
 
     return results, eval_loss
 

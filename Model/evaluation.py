@@ -50,5 +50,6 @@ def multi_label_metrics(preds, labels, label2id):
     roc_auc = np.mean(roc_auc)
     #pr_auc=np.mean(pr_auc)
     results["auc"] = roc_auc
+    results["accuracy"]=accuracy_score(labels,preds)
     #results["pr_auc"] = pr_auc
     return results, roc_auc
