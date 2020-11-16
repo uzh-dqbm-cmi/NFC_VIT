@@ -43,23 +43,8 @@ TRANSFORM_TEST=transforms.Compose([
 
     ])
 
-train_transforms = transforms.Compose(
-    [
-        transforms.Resize((224, 224)),
-        transforms.RandomResizedCrop(224),
-        transforms.RandomHorizontalFlip(),
-        transforms.ToTensor(),
-    ]
-)
 
-test_transforms = transforms.Compose(
-    [
-        transforms.Resize((224, 224)),
-        transforms.RandomResizedCrop(224),
-        transforms.RandomHorizontalFlip(),
-        transforms.ToTensor(),
-    ]
-)
+
 
 TRANSFORM_TRAIN=transforms.Compose([
     transforms.RandomResizedCrop(384),
@@ -77,7 +62,7 @@ class Split(Enum):
 
 def image_to_tensor_ten_crop_auto_augment(img_path, mode=None):
     im_rgb = Image.open(img_path).convert('RGB')
-    img_trs = train_transforms(im_rgb) if (mode == Split.train) else test_transforms(im_rgb)
+    img_trs = TRANSFORM_TRAIN(im_rgb) if (mode == Split.train) else TRANSFORM_TEST(im_rgb)
     #print(img_trs.size())
     return img_trs
 
