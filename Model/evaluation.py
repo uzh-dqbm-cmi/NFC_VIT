@@ -1,5 +1,6 @@
 
 import numpy as np
+import  math
 from scipy.special import softmax
 
 try:
@@ -14,6 +15,14 @@ except (AttributeError, ImportError):
 from sklearn.metrics import precision_recall_curve, accuracy_score
 from sklearn.metrics import f1_score
 from sklearn.metrics import auc as AUC
+
+
+def sigmoid(x):
+    return 1 / (1 + math.exp(-x))
+
+
+sigmoid_v = np.vectorize(sigmoid)
+
 
 def multi_task_metrics(out_by_task, labels_by_task):
     acc = 0
@@ -50,6 +59,8 @@ def multi_label_metrics(preds, labels, label2id):
     roc_auc = np.mean(roc_auc)
     #pr_auc=np.mean(pr_auc)
     results["auc"] = roc_auc
+    preds = [sigmoid_v(p) for p in preds]
+    preds = [(p >= 0.5).astype(int) for p in preds]
     results["accuracy"]=accuracy_score(labels,preds)
     #results["pr_auc"] = pr_auc
     return results, roc_auc
