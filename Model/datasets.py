@@ -40,7 +40,6 @@ TRANSFORM_TEST=transforms.Compose([
     transforms.CenterCrop(384),
     transforms.ToTensor(),
     transforms.Normalize(IMAGENET_RGB_MEAN, IMAGENET_RGB_SD)
-
     ])
 
 
