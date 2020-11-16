@@ -36,15 +36,15 @@ TRANSFORM_TEST_TEN_CROP=transforms.Compose([
 
 
 TRANSFORM_TEST=transforms.Compose([
-    transforms.Resize((512, 512)),
-    transforms.CenterCrop(512),
+    transforms.Resize((384, 384)),
+    transforms.CenterCrop(384),
     transforms.ToTensor(),
     transforms.Normalize(IMAGENET_RGB_MEAN, IMAGENET_RGB_SD)
 
     ])
 
 TRANSFORM_TRAIN=transforms.Compose([
-    transforms.RandomResizedCrop(512),
+    transforms.RandomResizedCrop(384),
     transforms.RandomHorizontalFlip(),
     #ImageNetPolicy(),
     transforms.ToTensor(),
