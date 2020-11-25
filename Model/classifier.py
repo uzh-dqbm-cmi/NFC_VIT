@@ -261,5 +261,5 @@ class ViTransferClassificationLayersWithAttention(nn.Module):
 
 ClassifierClass={
     "multi-task":MultiTaskClassificationModel,
-    "multi-label":ViTransferClassificationLayers
+    "multi-label":ViTransferClassification
 }
