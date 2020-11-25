@@ -4,7 +4,33 @@ import torch
 from torch.nn import CrossEntropyLoss, MSELoss, BCEWithLogitsLoss
 import torch.nn.functional as F
 from Model import viTransformer
+from torch.nn.init import xavier_uniform_
 
+class Attention(nn.Module):
+    def __init__(self, feat_size, num_classes):
+        super().__init__()
+        self.feat_size = feat_size
+        self.num_classes = num_classes
+
+        # context vectors for computing attention as in 2.2
+        self.U = nn.Linear(feat_size, num_classes)
+        xavier_uniform_(self.U.weight)
+        # final layer: create a matrix to use for the L binary classifiers as in 2.3
+        self.final = nn.Linear(feat_size, num_classes)
+        xavier_uniform_(self.final.weight)
+
+    def forward(self, x):
+        # feats: batch size x feat size x H x W
+        batch_size, feat_size, H, W = x.size()
+        x = x.permute(0, 2, 3, 1)
+        x = x.view(batch_size, -1, self.feat_size)
+        # nonlinearity (tanh)
+        x = torch.tanh(x)
+        # apply attention
+        alpha = torch.softmax(self.U.weight.matmul(x.transpose(1,2)), dim=2)
+        # imgage representations are weighted sums using the attention. Can compute all at once as a matmul
+        m = alpha.matmul(x)
+        return m
 
 class DenseNet121(nn.Module):
     def __init__(self, num_labels):
@@ -146,15 +172,15 @@ class ViTransferClassificationLayers(nn.Module):
         self.visual_features = viTransformer.vit_large_patch32_384(pretrained=True, num_classes=self.num_labels)
 
 
-        # self.fc1=nn.Linear(self.visual_features.feat_size, 512)
-        # self.fc2=nn.Linear(512, 256)
-        # self.fc3 = nn.Linear(256, num_labels)
-        # #self.fc4 = nn.Linear(128, num_labels)
-        #
-        # # @todo should check
-        # xavier_uniform_(self.fc1.weight)
-        # xavier_uniform_(self.fc2.weight)
-        # xavier_uniform_(self.fc3.weight)
+        self.fc1=nn.Linear(self.visual_features.feat_size, 512)
+        self.fc2=nn.Linear(512, 256)
+        self.fc3 = nn.Linear(256, self.num_labels)
+        #self.fc4 = nn.Linear(128, num_labels)
+
+        # @todo should check
+        xavier_uniform_(self.fc1.weight)
+        xavier_uniform_(self.fc2.weight)
+        xavier_uniform_(self.fc3.weight)
 
     def forward(
         self,
@@ -163,10 +189,52 @@ class ViTransferClassificationLayers(nn.Module):
         n_crops=None,
         batch_size=None,
     ):
-        logits = self.visual_features.pool_forward(img)
-
-
         ## ALARM
+        logits = self.fc3(self.fc2(self.fc1(self.visual_features.get_embeddings(img))))
+
+        if n_crops is not None:
+            logits = logits.view(batch_size, n_crops, -1).mean(1)
+
+        # logits = self.fc(img_feat_)
+        outputs = (logits,)  # add hidden states and attention if they are here
+
+        if labels is not None:
+            if self.num_labels == 1:
+                #  We are doing regression
+                loss_fct = MSELoss()
+                loss = loss_fct(logits.view(-1), labels.view(-1))
+            else:
+                loss_fct = BCEWithLogitsLoss()
+                loss = loss_fct(logits.view(-1, self.num_labels), labels.float())
+            outputs = (loss,) + outputs
+        return outputs
+class ViTransferClassificationLayersWithAttention(nn.Module):
+    def __init__(self, num_labels_per_task):
+        super().__init__()
+        self.num_labels = len(num_labels_per_task)
+        # image encoder
+        self.visual_features = viTransformer.vit_large_patch32_384(pretrained=True)
+        self.attention= Attention(self.visual_features.feat_size, self.num_labels)
+        self.fc1=nn.Linear(self.visual_features.feat_size, 512)
+        self.fc2=nn.Linear(512, 256)
+        self.fc3 = nn.Linear(256, self.num_labels)
+        #self.fc4 = nn.Linear(128, num_labels)
+
+        # @todo should check
+        xavier_uniform_(self.fc1.weight)
+        xavier_uniform_(self.fc2.weight)
+        xavier_uniform_(self.fc3.weight)
+
+    def forward(
+        self,
+        img=None,
+        labels=None,
+        n_crops=None,
+        batch_size=None,
+    ):
+        ## ALARM
+        x=self.attention(self.visual_features.get_embeddings(img))
+        logits = self.fc3(self.fc2(self.fc1(x)))
 
         if n_crops is not None:
             logits = logits.view(batch_size, n_crops, -1).mean(1)
