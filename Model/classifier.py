@@ -27,6 +27,7 @@ class Attention(nn.Module):
         alpha = torch.softmax(self.U.weight.matmul(x.transpose(1,2)), dim=2)
         # imgage representations are weighted sums using the attention. Can compute all at once as a matmul
         m = alpha.matmul(x)
+
         return m
 
 class DenseNet121(nn.Module):
@@ -168,15 +169,17 @@ class ViTransferClassificationLayers(nn.Module):
         # image encoder
         self.visual_features = viTransformer.vit_large_patch32_384(pretrained=True, num_classes=self.num_labels)
 
-
-        self.fc1=nn.Linear(self.visual_features.num_features, 512)
-        self.fc2=nn.Linear(512, 256)
+        # dense + batchnorm + relu
+        fc1=nn.Linear(self.visual_features.num_features, 512)
+        self.fc1=nn.Sequential(fc1,nn.BatchNorm1d(512),nn.ReLU())
+        fc2=nn.Linear(512, 256)
+        self.fc2=nn.Sequential(fc2,nn.BatchNorm1d(256),nn.ReLU())
         self.fc3 = nn.Linear(256, self.num_labels)
         #self.fc4 = nn.Linear(128, num_labels)
 
         # @todo should check
-        xavier_uniform_(self.fc1.weight)
-        xavier_uniform_(self.fc2.weight)
+        xavier_uniform_(fc1.weight)
+        xavier_uniform_(fc2.weight)
         xavier_uniform_(self.fc3.weight)
 
     def forward(
@@ -187,7 +190,7 @@ class ViTransferClassificationLayers(nn.Module):
         batch_size=None,
     ):
         ## ALARM
-        x=self.visual_features.get_embeddings(img)
+        x = self.visual_features.get_embeddings(img)
         x= torch.mean(x,dim=1)
         logits = self.fc3(self.fc2(self.fc1(x)))
 
@@ -233,7 +236,7 @@ class ViTransferClassificationLayersWithAttention(nn.Module):
         batch_size=None,
     ):
         ## ALARM
-        x = self.visual_features.forward_features(img)
+        x = self.visual_features.get_embeddings(img)
         x = self.attention(x)
         logits = self.fc1(x)
         if n_crops is not None:
