@@ -172,7 +172,7 @@ class ViTransferClassificationLayers(nn.Module):
         self.visual_features = viTransformer.vit_large_patch32_384(pretrained=True, num_classes=self.num_labels)
 
 
-        self.fc1=nn.Linear(self.visual_features.feat_size, 512)
+        self.fc1=nn.Linear(self.visual_features.num_features, 512)
         self.fc2=nn.Linear(512, 256)
         self.fc3 = nn.Linear(256, self.num_labels)
         #self.fc4 = nn.Linear(128, num_labels)
@@ -190,7 +190,9 @@ class ViTransferClassificationLayers(nn.Module):
         batch_size=None,
     ):
         ## ALARM
-        logits = self.fc3(self.fc2(self.fc1(self.visual_features.get_embeddings(img))))
+        x=self.visual_features.get_embeddings(img)
+        x= torch.mean(x,dim=1)
+        logits = self.fc3(self.fc2(self.fc1(x)))
 
         if n_crops is not None:
             logits = logits.view(batch_size, n_crops, -1).mean(1)
