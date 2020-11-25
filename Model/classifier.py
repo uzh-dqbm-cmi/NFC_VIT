@@ -20,10 +20,7 @@ class Attention(nn.Module):
         xavier_uniform_(self.final.weight)
 
     def forward(self, x):
-        # feats: batch size x feat size x H x W
-        batch_size, feat_size, H, W = x.size()
-        x = x.permute(0, 2, 3, 1)
-        x = x.view(batch_size, -1, self.feat_size)
+
         # nonlinearity (tanh)
         x = torch.tanh(x)
         # apply attention
@@ -236,9 +233,8 @@ class ViTransferClassificationLayersWithAttention(nn.Module):
         batch_size=None,
     ):
         ## ALARM
-        x=self.attention(self.visual_features.get_embeddings(img))
-        x = torch.mean(x, dim=1)
-
+        x = self.visual_features.get_embeddings(img)
+        x = self.attention(x)
         logits = self.fc1(x)
         if n_crops is not None:
             logits = logits.view(batch_size, n_crops, -1).mean(1)
