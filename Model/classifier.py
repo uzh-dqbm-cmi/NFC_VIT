@@ -19,6 +19,7 @@ class Attention(nn.Module):
         self.final = nn.Linear(feat_size, num_classes)
         xavier_uniform_(self.final.weight)
 
+
     def forward(self, x):
 
         # nonlinearity (tanh)
@@ -27,8 +28,9 @@ class Attention(nn.Module):
         alpha = torch.softmax(self.U.weight.matmul(x.transpose(1,2)), dim=2)
         # imgage representations are weighted sums using the attention. Can compute all at once as a matmul
         m = alpha.matmul(x)
+        y = self.final.weight.mul(m).sum(dim=2).add(self.final.bias)
 
-        return m
+        return y
 
 class DenseNet121(nn.Module):
     def __init__(self, num_labels):
@@ -237,8 +239,8 @@ class ViTransferClassificationLayersWithAttention(nn.Module):
     ):
         ## ALARM
         x = self.visual_features.get_embeddings(img)
-        x = self.attention(x)
-        logits = self.fc1(x)
+        logits = self.attention(x)
+        #logits = self.fc1(x)
         if n_crops is not None:
             logits = logits.view(batch_size, n_crops, -1).mean(1)
 
@@ -259,5 +261,5 @@ class ViTransferClassificationLayersWithAttention(nn.Module):
 
 ClassifierClass={
     "multi-task":MultiTaskClassificationModel,
-    "multi-label":ViTransferClassificationLayers
+    "multi-label":ViTransferClassificationLayersWithAttention
 }
