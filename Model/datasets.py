@@ -37,9 +37,10 @@ TRANSFORM_TEST_TEN_CROP=transforms.Compose([
 
 TRANSFORM_TEST=transforms.Compose([
     transforms.Resize((384, 384)),
-    transforms.CenterCrop(384),
+    transforms.CenterCrop(384), #384
     transforms.ToTensor(),
     transforms.Normalize(IMAGENET_RGB_MEAN, IMAGENET_RGB_SD)
+
     ])
 
 

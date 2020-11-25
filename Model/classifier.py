@@ -138,8 +138,55 @@ class ViTransferClassification(nn.Module):
             outputs = (loss,) + outputs
         return outputs
 
+class ViTransferClassificationLayers(nn.Module):
+    def __init__(self, num_labels_per_task):
+        super(ViTransferClassificationLayers, self).__init__()
+        self.num_labels = len(num_labels_per_task)
+        # image encoder
+        self.visual_features = viTransformer.vit_large_patch32_384(pretrained=True, num_classes=self.num_labels)
+
+
+        # self.fc1=nn.Linear(self.visual_features.feat_size, 512)
+        # self.fc2=nn.Linear(512, 256)
+        # self.fc3 = nn.Linear(256, num_labels)
+        # #self.fc4 = nn.Linear(128, num_labels)
+        #
+        # # @todo should check
+        # xavier_uniform_(self.fc1.weight)
+        # xavier_uniform_(self.fc2.weight)
+        # xavier_uniform_(self.fc3.weight)
+
+    def forward(
+        self,
+        img=None,
+        labels=None,
+        n_crops=None,
+        batch_size=None,
+    ):
+        logits = self.visual_features.pool_forward(img)
+
+
+        ## ALARM
+
+        if n_crops is not None:
+            logits = logits.view(batch_size, n_crops, -1).mean(1)
+
+        # logits = self.fc(img_feat_)
+        outputs = (logits,)  # add hidden states and attention if they are here
+
+        if labels is not None:
+            if self.num_labels == 1:
+                #  We are doing regression
+                loss_fct = MSELoss()
+                loss = loss_fct(logits.view(-1), labels.view(-1))
+            else:
+                loss_fct = BCEWithLogitsLoss()
+                loss = loss_fct(logits.view(-1, self.num_labels), labels.float())
+            outputs = (loss,) + outputs
+        return outputs
+
 
 ClassifierClass={
     "multi-task":MultiTaskClassificationModel,
-    "multi-label":ViTransferClassification
+    "multi-label":ViTransferClassificationLayers
 }

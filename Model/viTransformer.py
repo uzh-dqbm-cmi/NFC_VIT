@@ -292,6 +292,12 @@ class VisionTransformer(nn.Module):
         x = self.norm(x)
         return x
 
+    def pool_forward(self,x):
+        x=self.get_embeddings(x)
+        x=torch.mean(x,dim=1)
+        x = self.head(x)
+        return x
+
     def forward(self, x):
         x = self.forward_features(x)
         x = self.head(x)
