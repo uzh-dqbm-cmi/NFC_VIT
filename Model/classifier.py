@@ -237,8 +237,9 @@ class ViTransferClassificationLayersWithAttention(nn.Module):
     ):
         ## ALARM
         x=self.attention(self.visual_features.get_embeddings(img))
-        logits = self.fc1(x)
+        x = torch.mean(x, dim=1)
 
+        logits = self.fc1(x)
         if n_crops is not None:
             logits = logits.view(batch_size, n_crops, -1).mean(1)
 
