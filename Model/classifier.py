@@ -192,8 +192,8 @@ class ViTransferClassificationLayers(nn.Module):
         batch_size=None,
     ):
         ## ALARM
-        x = self.visual_features.get_embeddings(img)
-        x= torch.mean(x,dim=1)
+        x = self.visual_features.forward_features(img)
+        #x= torch.mean(x,dim=1)
         logits = self.fc3(self.fc2(self.fc1(x)))
 
         if n_crops is not None:
@@ -261,5 +261,5 @@ class ViTransferClassificationLayersWithAttention(nn.Module):
 
 ClassifierClass={
     "multi-task":MultiTaskClassificationModel,
-    "multi-label":ViTransferClassificationLayersWithAttention
+    "multi-label":ViTransferClassificationLayers
 }
