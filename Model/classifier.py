@@ -216,16 +216,17 @@ class ViTransferClassificationLayersWithAttention(nn.Module):
         self.num_labels = len(num_labels_per_task)
         # image encoder
         self.visual_features = viTransformer.vit_large_patch32_384(pretrained=True)
-        self.attention= Attention(self.visual_features.feat_size, self.num_labels)
-        self.fc1=nn.Linear(self.visual_features.feat_size, 512)
-        self.fc2=nn.Linear(512, 256)
-        self.fc3 = nn.Linear(256, self.num_labels)
+        self.attention= Attention(self.visual_features.num_features, self.num_labels)
+
+        self.fc1=nn.Linear(self.visual_features.num_features, self.num_labels)
+        #elf.fc2=nn.Linear(512, 256)
+        #self.fc3 = nn.Linear(256, self.num_labels)
         #self.fc4 = nn.Linear(128, num_labels)
 
         # @todo should check
         xavier_uniform_(self.fc1.weight)
-        xavier_uniform_(self.fc2.weight)
-        xavier_uniform_(self.fc3.weight)
+        #xavier_uniform_(self.fc2.weight)
+        #xavier_uniform_(self.fc3.weight)
 
     def forward(
         self,
@@ -236,7 +237,7 @@ class ViTransferClassificationLayersWithAttention(nn.Module):
     ):
         ## ALARM
         x=self.attention(self.visual_features.get_embeddings(img))
-        logits = self.fc3(self.fc2(self.fc1(x)))
+        logits = self.fc1(x)
 
         if n_crops is not None:
             logits = logits.view(batch_size, n_crops, -1).mean(1)
@@ -258,5 +259,5 @@ class ViTransferClassificationLayersWithAttention(nn.Module):
 
 ClassifierClass={
     "multi-task":MultiTaskClassificationModel,
-    "multi-label":ViTransferClassificationLayers
+    "multi-label":ViTransferClassificationLayersWithAttention
 }
