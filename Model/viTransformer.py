@@ -290,11 +290,11 @@ class VisionTransformer(nn.Module):
             x = blk(x)
 
         x = self.norm(x)
-        return x
+        return x[:,1:]
 
     def pool_forward(self,x):
         x=self.get_embeddings(x)
-        x=torch.mean(x,dim=1)
+        x = torch.mean(x,dim=1)
         x = self.head(x)
         return x
 

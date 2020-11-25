@@ -233,7 +233,7 @@ class ViTransferClassificationLayersWithAttention(nn.Module):
         batch_size=None,
     ):
         ## ALARM
-        x = self.visual_features.get_embeddings(img)
+        x = self.visual_features.forward_features(img)
         x = self.attention(x)
         logits = self.fc1(x)
         if n_crops is not None:
@@ -256,5 +256,5 @@ class ViTransferClassificationLayersWithAttention(nn.Module):
 
 ClassifierClass={
     "multi-task":MultiTaskClassificationModel,
-    "multi-label":ViTransferClassificationLayersWithAttention
+    "multi-label":ViTransferClassificationLayers
 }
