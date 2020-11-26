@@ -106,7 +106,7 @@ class MultiTaskClassificationModel(nn.Module):
         self.num_labels_per_task = num_labels_per_task
         # image encoder
         #self.dropout = nn.Dropout()
-        self.visual_features = MultiTaskDenseNet121(num_labels_per_task)
+        self.visual_features = MultiTaskViTransfer(num_labels_per_task)
 
     def forward(
         self,
@@ -163,6 +163,27 @@ class ViTransferClassification(nn.Module):
                 loss = loss_fct(logits.view(-1, self.num_labels), labels.float())
             outputs = (loss,) + outputs
         return outputs
+
+class MultiTaskViTransfer(nn.Module):
+    def __init__(self, num_labels_per_task):
+        self.num_labels = len(num_labels_per_task)
+        super(MultiTaskViTransfer, self).__init__()
+        self.visual_features = viTransformer.vit_large_patch32_384(pretrained=True, num_classes=self.num_labels)
+        num_features = self.visual_features.num_features
+        self.num_labels_per_task = num_labels_per_task
+        self.fc = nn.ModuleDict(
+            {task_name: nn.Linear(num_features, task_dim) for task_name, task_dim in self.num_labels_per_task.items()}
+        )
+
+
+    def forward(
+        self,
+        x,
+    ):
+        out = self.visual_features.forward_features(x)
+        x = {task: layer(out) for task, layer in self.fc.items()}
+
+        return x
 
 class ViTransferClassificationLayers(nn.Module):
     def __init__(self, num_labels_per_task):
