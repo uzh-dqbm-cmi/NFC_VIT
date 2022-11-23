@@ -1,0 +1,15 @@
+python train.py \
+--data_dir   /opt/data/capillaroscopy/  \
+--output_dir  /cluster/home/fnooralahzad/nail_img_results/ \
+--do_train \
+--do_eval \
+--early_stopping \
+--patience 5 \
+--learning_rate 0.0001 \
+--num_train_epochs 20 \
+--overwrite_output_dir \
+--save_step -1 \
+--per_gpu_train_batch_size 8  \
+--per_gpu_eval_batch_size 8 \
+--binary \
+--task_name NailImages >>train.log

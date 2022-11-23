@@ -139,7 +139,13 @@ dataset/
 *.xlsx
 
 # runs
-runs/
-output/
-data/
+runs/*
+output/*
+data/*
+agreement/*
+output_label/
+wandb/*
+.ipynb_checkpoints
+Dataset statistic.ipynb
+self_supervised_learning.py
 

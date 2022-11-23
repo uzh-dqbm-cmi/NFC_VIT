@@ -55,6 +55,7 @@ class MultiTaskDenseNet121(nn.Module):
             {task_name: nn.Linear(num_features, task_dim) for task_name, task_dim in self.num_labels_per_task.items()}
         )
 
+
     def forward(self, x):
         features=self.densenet121.features(x)
         out = F.relu(features, inplace=True)
@@ -114,9 +115,10 @@ class MultiTaskClassificationModel(nn.Module):
         labels=None,
         n_crops=None,
         batch_size=None,
+        finger_index=None,
     ):
 
-        logits = self.visual_features(img)
+        logits = self.visual_features(img, finger_index=finger_index)
         if n_crops is not None:
             logits = {task:x.view(batch_size, n_crops, -1).mean(1)  for task,x in logits.items()}
 
@@ -127,6 +129,7 @@ class MultiTaskClassificationModel(nn.Module):
             p=logits[task].view(-1, self.num_labels_per_task[task])
             gt=labels[:,idx].view(-1)
             losses[task] = nn.CrossEntropyLoss()(p,gt)
+
         outputs = (losses,) + outputs
 
         return outputs  # (loss), logits, (hidden_states), (attentions)
@@ -145,8 +148,9 @@ class ViTransferClassification(nn.Module):
         labels=None,
         n_crops=None,
         batch_size=None,
+        finger_index=None
     ):
-        logits = self.visual_features(img)
+        logits = self.visual_features(img, finger_index)
         if n_crops is not None:
             logits = logits.view(batch_size, n_crops, -1).mean(1)
 
@@ -157,17 +161,20 @@ class ViTransferClassification(nn.Module):
             if self.num_labels == 1:
                 #  We are doing regression
                 loss_fct = MSELoss()
-                loss = loss_fct(logits.view(-1), labels.view(-1))
+                loss = loss_fct(logits.view(-1), labels.view(-1).float())
             else:
                 loss_fct = BCEWithLogitsLoss()
                 loss = loss_fct(logits.view(-1, self.num_labels), labels.float())
             outputs = (loss,) + outputs
         return outputs
 
+
 class MultiTaskViTransfer(nn.Module):
     def __init__(self, num_labels_per_task):
         self.num_labels = len(num_labels_per_task)
         super(MultiTaskViTransfer, self).__init__()
+        self.finger_index_embeddings = nn.Embedding(num_embeddings=20, embedding_dim=1024)
+
         self.visual_features = viTransformer.vit_large_patch32_384(pretrained=True, num_classes=self.num_labels)
         num_features = self.visual_features.num_features
         self.num_labels_per_task = num_labels_per_task
@@ -175,15 +182,16 @@ class MultiTaskViTransfer(nn.Module):
             {task_name: nn.Linear(num_features, task_dim) for task_name, task_dim in self.num_labels_per_task.items()}
         )
 
-
     def forward(
         self,
         x,
+        finger_index=None
     ):
         out = self.visual_features.forward_features(x)
         x = {task: layer(out) for task, layer in self.fc.items()}
 
         return x
+
 
 class ViTransferClassificationLayers(nn.Module):
     def __init__(self, num_labels_per_task):
@@ -281,6 +289,6 @@ class ViTransferClassificationLayersWithAttention(nn.Module):
 
 
 ClassifierClass={
-    "multi-task":MultiTaskClassificationModel,
-    "multi-label":ViTransferClassification
+    "multi-task" : MultiTaskClassificationModel,
+    "multi-label" : ViTransferClassification,
 }

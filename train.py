@@ -1,23 +1,5 @@
 
-
-
-# coding=utf-8
-# Copyright 2018 The Google AI Language Team Authors and The HuggingFace Inc. team.
-# Copyright (c) 2018, NVIDIA CORPORATION.  All rights reserved.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-""" Finetuning XrayTransformer.
-    Adapted from `examples/text-classification/run_glue.py`
+""" Finetuning
 """
 
 import sys
@@ -30,7 +12,7 @@ import os, math
 import random
 import pandas as pd
 import sklearn
-
+import pickle
 import numpy as np
 import torch
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler, TensorDataset
@@ -43,7 +25,7 @@ from Model.processors import image_processors as processors
 from Model.datasets import image_datasets as datasets
 
 from collections import defaultdict
-from Model.evaluation import multi_task_metrics,multi_label_metrics
+from Model.evaluation import multi_task_metrics,multi_label_metrics,label_metrics
 
 try:
     from torch.utils.tensorboard import SummaryWriter
@@ -51,10 +33,14 @@ except ImportError:
     from tensorboardX import SummaryWriter
 
 from transformers import WEIGHTS_NAME,  AdamW, get_linear_schedule_with_warmup
-
+from sklearn.metrics import roc_curve
+from sklearn.metrics import roc_auc_score
 logger = logging.getLogger(__name__)
 
+def sigmoid(x):
+    return 1 / (1 + math.exp(-x))
 
+sigmoid_v = np.vectorize(sigmoid)
 
 
 def set_seed(args):
@@ -71,6 +57,9 @@ def load_and_cache_examples(args, imageDataset, evaluate=False, mode=None):
     return dataset, np.array([f.identifier for f in dataset.features])
 
 def train(args, train_dataset, model, label2id, dev_dataset=None, cv_idx=0):
+
+    if args.binary:
+        label2id={0:"normal",1:"abnormal"}
 
     """ Train the model """
     if args.local_rank in [-1, 0]:
@@ -176,7 +165,6 @@ def train(args, train_dataset, model, label2id, dev_dataset=None, cv_idx=0):
     patience_count = 0
 
 
-
     for epoch_num in train_iterator:
         epoch_iterator = tqdm(train_dataloader, desc="Iteration", disable=args.local_rank not in [-1, 0])
         loss_cnt = 0
@@ -187,19 +175,25 @@ def train(args, train_dataset, model, label2id, dev_dataset=None, cv_idx=0):
                 steps_trained_in_current_epoch -= 1
                 continue
             model.train()
-            batch = tuple(t.to(args.device) for t in batch)
 
+            batch = tuple(t.to(args.device) for t in batch[1:])
+            #img,finger_index,label, multi_labels, multi_task_labels, multi_labels_with_binary
             # IF MULTITASK : batch[-1] else batch[1]
             if args.multiTask:
+                label_ids = batch[-2]
+            elif args.binary:
+                label_ids = batch[-4]
+            elif args.multiLabelAndBinary:
                 label_ids = batch[-1]
             else:
-                label_ids = batch[1]
+                label_ids = batch[-3]
 
-            num_tasks=len(label_ids)
+            num_tasks = len(label_ids)
 
             #print(batch[0].device, weights.device, pos_weights.device)
             inputs = {"img": batch[0],
                       "labels": label_ids,
+                      "finger_index" :batch[1]
                       }
 
             outputs = model(**inputs)
@@ -217,7 +211,7 @@ def train(args, train_dataset, model, label2id, dev_dataset=None, cv_idx=0):
             else:
                 loss.backward()
 
-            epoch_loss+=loss.item()
+            epoch_loss += loss.item()
 
             tr_loss += loss.item()
 
@@ -276,8 +270,8 @@ def train(args, train_dataset, model, label2id, dev_dataset=None, cv_idx=0):
 
                 # Save model checkpoint
                 # Saving best-practices: if you use defaults names for the model, you can reload it using from_pretrained()
-                if not os.path.exists(os.path.join(args.output_dir,str(cv_idx))):
-                    os.makedirs(os.path.join(args.output_dir,str(cv_idx)))
+                if not os.path.exists(os.path.join(args.output_dir, str(cv_idx))):
+                    os.makedirs(os.path.join(args.output_dir, str(cv_idx)))
                 logger.info("Saving model checkpoint to %s %s", args.output_dir, str(cv_idx))
                 # Save a trained model, configuration and tokenizer using `save_pretrained()`.
                 # They can then be reloaded using `from_pretrained()`
@@ -285,7 +279,7 @@ def train(args, train_dataset, model, label2id, dev_dataset=None, cv_idx=0):
                     model.module if hasattr(model, "module") else model
                 )  # Take care of distributed/parallel training
                 torch.save(model_to_save.state_dict(), os.path.join(args.output_dir,str(cv_idx), "pytorch_model.bin"))
-                torch.save(args, os.path.join(args.output_dir,str(cv_idx), "training_args.bin"))
+                torch.save(args, os.path.join(args.output_dir, str(cv_idx), "training_args.bin"))
             else:
                 print('(loss: %.4f, fold: %d, epoch: %d, dev acc.auc = %.4f, dev loss =  %.4f), without saving...' %
                       (epoch_loss / loss_cnt,
@@ -311,6 +305,7 @@ def evaluate(args, eval_dataset, model, label2id,  prefix=""):
     eval_outputs_dirs = (args.output_dir,)
 
     results = {}
+    fprs_tprs={}
     for eval_task, eval_output_dir in zip(eval_task_names, eval_outputs_dirs):
         if not os.path.exists(eval_output_dir) and args.local_rank in [-1, 0]:
             os.makedirs(eval_output_dir)
@@ -332,22 +327,29 @@ def evaluate(args, eval_dataset, model, label2id,  prefix=""):
         nb_eval_steps = 0
         preds = {} if args.multiTask else []
         labels = {} if args.multiTask else []
-
+        img_ids=[]
         all_logits = {t: [] for t in label2id}
         eval_loss, eval_accuracy = 0, 0
         nb_eval_steps, nb_eval_examples = 0, 0
         model.eval()
 
         for batch in tqdm(eval_dataloader, desc="Evaluating"):
-            batch = tuple(t.to(args.device) for t in batch)
+            img_ids.extend(batch[0])
+            batch = tuple(t.to(args.device) for t in batch[1:])
 
+            # img,finger_index,label, multi_labels, multi_task_labels, multi_labels_with_binary
+            # IF MULTITASK : batch[-1] else batch[1]
             if args.multiTask:
+                label_ids = batch[-2]
+            elif args.binary:
+                label_ids = batch[-4]
+            elif args.multiLabelAndBinary:
                 label_ids = batch[-1]
             else:
-                label_ids = batch[1]
+                label_ids = batch[-3]
 
             if len(batch[0].size())>4:
-                bs, n_crops, c, h, w = batch[0].size()
+                bs, n_crops, c, h, w = batch[1].size()
             else:
                 bs, c, h, w = batch[0].size()
                 n_crops=None
@@ -358,18 +360,28 @@ def evaluate(args, eval_dataset, model, label2id,  prefix=""):
                           "labels": label_ids,
                           "n_crops":n_crops,
                           "batch_size":bs}
+
+
                 outputs = model(**inputs)
                 tmp_eval_loss, logits = outputs[:2]
 
                 if args.multiTask:
                     tmp_eval_loss = sum(tmp_eval_loss.values()) / num_tasks
-                    logits = {t: lt.detach().cpu().numpy() for t, lt in logits.items()}
+                    logits = {t: np.argmax(lt.detach().cpu().numpy(), axis=1) for t, lt in logits.items()}
                     label_ids = {t: batch[-1][:, i] for i, t in enumerate(label2id)}
                     label_ids = {t: l.to('cpu').numpy() for t, l in label_ids.items()}
-                else:
-                    logits=[lt.detach().cpu().numpy() for lt in logits]
-                    label_ids=[l.to('cpu').numpy() for  l in label_ids]
 
+                # elif args.binary:
+                #     if args.n_gpu > 1:
+                #         tmp_eval_loss = tmp_eval_loss.mean()
+                #     logits = logits.detach().cpu().numpy()
+                #     label_ids = label_ids.to('cpu').numpy()
+                #     print(logits, label_ids)
+                else:
+                    if args.n_gpu > 1:
+                        tmp_eval_loss = tmp_eval_loss.mean()
+                    logits = [lt.detach().cpu().numpy() for lt in logits]
+                    label_ids = [l.to('cpu').numpy() for l in label_ids]
 
                 if len(preds) == 0:
                     if args.multiTask:
@@ -377,8 +389,8 @@ def evaluate(args, eval_dataset, model, label2id,  prefix=""):
                             preds[task] = logits[task].tolist()
                             labels[task] = label_ids[task].tolist()
                     else:
-                        preds=logits
-                        labels=label_ids
+                        preds = logits
+                        labels = label_ids
                 else:
                     if args.multiTask:
                         for task in label_ids.keys():
@@ -387,6 +399,7 @@ def evaluate(args, eval_dataset, model, label2id,  prefix=""):
                     else:
                             preds.extend(logits)
                             labels.extend(label_ids)
+
                 #tmp_eval_accuracy, rs = multi_task_metrics(logits, label_ids)
 
                 eval_loss += tmp_eval_loss.item()
@@ -396,52 +409,100 @@ def evaluate(args, eval_dataset, model, label2id,  prefix=""):
             nb_eval_steps += 1
 
         eval_loss = eval_loss / nb_eval_steps
+        # save image_ids
+        image_ids_file = os.path.join(eval_output_dir, "image_ids_{}.csv".format(prefix))
 
         if args.multiTask:
-            eval_accuracy = multi_task_metrics(preds, labels)
+            #eval_accuracy = multi_task_metrics(preds, labels)
+            out_pr_gr={"pred":preds, "labels":labels}
+            result = {'eval_loss': eval_loss}
+            # save the predicted and actual label for each category in the fold
+            output_predictions_file = os.path.join(eval_output_dir, "pr_gt_results_{}".format(prefix))
+            f = open(output_predictions_file, "wb")
+            pickle.dump(out_pr_gr, f)
+            f.close()
+            labels_preds = []
+            for i in range(len(img_ids)):
+                ls = {k: labels[k][i] for k, v in label2id.items()}
+                ps = {f'{k}_p': preds[k][i] for k, v in label2id.items()}
+                labels_preds.append({**ls, **ps})
+            df = pd.DataFrame(labels_preds, index=img_ids)
+        elif args.binary:
+            preds = [sigmoid_v(p) for p in preds]
+            labels_preds = []
+            for i in range(len(img_ids)):
+                ls = {'class':labels[i]}
+                ps = {f'prediction': preds[i][-1]}
+                labels_preds.append({**ls, **ps})
+            df = pd.DataFrame(labels_preds, index=img_ids)
+
+            rs, eval_auc, fpr_tpr = label_metrics(preds, labels)
+
             result = {'eval_loss': eval_loss,
-                      'eval_accuracy': eval_accuracy}
+                      'eval_auc': eval_auc,
+                      'auc_per_class': rs}
+            fprs_tprs.update(fpr_tpr)
+            output_fpr_tpr_file = os.path.join(eval_output_dir, "fpr_tpr_results_{}".format(prefix))
+
+            f = open(output_fpr_tpr_file, "wb")
+            pickle.dump(fprs_tprs, f)
+            f.close()
         else:
-            rs, eval_auc = multi_label_metrics(preds, labels, label2id)
+            preds = [sigmoid_v(p) for p in preds]
+            labels_preds=[]
+            for i in range(len(img_ids)):
+                ls={k:labels[i][v] for k,v in label2id.items()}
+                ps={f'{k}_p':preds[i][v] for k,v in label2id.items()}
+                labels_preds.append({**ls, **ps})
+
+            df = pd.DataFrame(labels_preds, index=img_ids)
+
+            rs, eval_auc, fpr_tpr = multi_label_metrics(preds, labels, label2id)
             result = {'eval_loss': eval_loss,
-                       'eval_auc': eval_auc,
+                      'eval_auc': eval_auc,
                       'auc_per_class':rs}
+            fprs_tprs.update(fpr_tpr)
+            output_fpr_tpr_file = os.path.join(eval_output_dir, "fpr_tpr_results_{}".format(prefix))
+
+            f = open(output_fpr_tpr_file, "wb")
+            pickle.dump(fprs_tprs, f)
+            f.close()
 
         results.update(result)
+        df.to_csv(image_ids_file, index=True, header=True)
+
 
 
         output_eval_file = os.path.join(eval_output_dir, "eval_results_{}.txt".format(prefix))
 
-        if os.path.exists(output_eval_file):
-            append_write = 'a'  # append if already exists
-        else:
-            append_write = 'w'  # make a new file if not
-        with open(output_eval_file, append_write) as writer:
-            logger.info("***** Eval results {} *****".format(prefix))
-            for key in sorted(result.keys()):
-                logger.info("  %s = %s", key, str(result[key]))
-                writer.write("%s = %s\n" % (key, str(result[key])))
-            if args.multiTask:
-                for task in labels.keys():
-                    _preds, _labels = preds[task], labels[task]
-                    _preds = np.argmax(_preds, axis=1)
-                    y_actul = pd.Series(_labels, name='Actual')
-                    y_pred = pd.Series(_preds, name='Predicted')
-                    writer.write("***** Confusion Matrix for  {} *****".format(task))
-                    df_confusion = pd.crosstab(y_actul, y_pred, rownames=['Actual'], colnames=['Predicted'],
-                                               margins=True)
-                    writer.write(df_confusion.to_string())
-            else:
-                pass
-                def sigmoid(x):
-                    return 1 / (1 + math.exp(-x))
-                sigmoid_v = np.vectorize(sigmoid)
 
-                preds=[sigmoid_v(p) for p in preds]
-                preds=[(p >= 0.5).astype(int) for p in preds]
-                cm = sklearn.metrics.multilabel_confusion_matrix(labels, preds)
-                writer.write(np.array2string(cm))
-                writer.write(sklearn.metrics.classification_report(labels,preds,target_names=label2id.keys()))
+        # if os.path.exists(output_eval_file):
+        #     append_write = 'a'  # append if already exists
+        # else:
+        #     append_write = 'w'  # make a new file if not
+        # with open(output_eval_file, append_write) as writer:
+        #     logger.info("***** Eval results {} *****".format(prefix))
+        #     for key in sorted(result.keys()):
+        #         logger.info("  %s = %s", key, str(result[key]))
+        #         writer.write("%s = %s\n" % (key, str(result[key])))
+        #     if args.multiTask:
+        #         for task in labels.keys():
+        #             _preds_pr, _labels = preds[task], labels[task]
+        #             _preds = np.argmax(_preds_pr, axis=1)
+        #             y_actul = pd.Series(_labels, name='Actual')
+        #             y_pred = pd.Series(_preds, name='Predicted')
+        #             fpr, tpr, thresholds = roc_curve(_labels, _preds_pr)
+        #             writer.write("***** Confusion Matrix for  {} *****".format(task))
+        #             df_confusion = pd.crosstab(y_actul, y_pred, rownames=['Actual'], colnames=['Predicted'],
+        #                                        margins=True)
+        #             writer.write(df_confusion.to_string())
+        #     else:
+        #         pass
+        #         preds = [sigmoid_v(p) for p in preds]
+        #         preds = [(p >= 0.5).astype(int) for p in preds]
+        #         cm = sklearn.metrics.multilabel_confusion_matrix(labels, preds)
+        #         writer.write(np.array2string(cm))
+        #         writer.write(sklearn.metrics.classification_report(labels,preds,target_names=label2id.keys()))
 
     return results, eval_loss
 
@@ -511,14 +572,18 @@ def main():
     )
 
 
-
     parser.add_argument("--do_train", action="store_true", help="Whether to run training.")
     parser.add_argument("--do_eval", action="store_true", help="Whether to run eval on the test set.")
     parser.add_argument("--early_stopping", action="store_true", help="Whether to run eval on the test set.")
     parser.add_argument("--patience", type=int, default=2, help="patience for early stopping")
     parser.add_argument("--limit_length", default=None ,type=int, help="number of examples to test the algo")
     parser.add_argument("--baseline", action="store_true", help="Freeze the visual backbone")
-    parser.add_argument("--multiTask", action="store_true", help="Freeze the visual backbone")
+    parser.add_argument("--multiTask", action="store_true", help="do the multi task classification")
+    parser.add_argument("--binary", action="store_true", help="do the binary (normal/abnormal) classification")
+    parser.add_argument("--multiLabelAndBinary", action="store_true", help="do the binary (normal/abnormal) classification")
+
+    parser.add_argument("--evaluate_during_training", action="store_true", help="evaluate_during_training")
+
 
     parser.add_argument("--autoAugment", action="store_true", help="Whether touse autoAugment or not.")
     parser.add_argument("--per_gpu_train_batch_size", default=8, type=int, help="Batch size per GPU/CPU for training.")
@@ -638,6 +703,9 @@ def main():
     imageDataset = datasets[args.task_name]
 
     label_list = processor.class2id
+    if args.multiLabelAndBinary:
+        label_list = {**label_list, **{"Class": 4}}
+
     num_labels = len(label_list)
 
     # Load pretrained model and tokenizer
@@ -645,7 +713,7 @@ def main():
         torch.distributed.barrier()  # Make sure only the first process in distributed training will download model & vocab
 
 
-    classifier=ClassifierClass["multi-task" if args.multiTask else "multi-label"]
+    classifier = ClassifierClass["multi-task" if args.multiTask else "multi-label"]
 
 
 
@@ -664,7 +732,6 @@ def main():
         for cv_idx, (train_dev_idx, test_idx) in enumerate(gss.split(range(len(image_datasets)), groups=groups)):
             if args.model_name_or_path:
                 model = classifier(num_labels_per_task={c: 4 for c in label_list.keys()})
-
                 if not args.baseline:
                     logger.warning("You are instantiating from pretrained model.")
                     model_dict = model.state_dict()
@@ -683,18 +750,25 @@ def main():
                     logger.info(f"model:{model.__class__.__name__} weights were initialized from {args.model_name_or_path}.\n")
 
             else:
-                model = classifier(num_labels_per_task={c: 4 for c in label_list.keys()})
+                if args.binary:
+                    model = classifier(num_labels_per_task={1:0})
+                elif args.multiTask:
+                    model = classifier(num_labels_per_task={c: 4 for c in label_list.keys()})
+                else:
+                    model = classifier(num_labels_per_task= label_list)
 
             model.to(args.device)
             logger.info(" Cross-Validation: %s", cv_idx)
             # for dev
             sub_gss = GroupShuffleSplit(n_splits=1, train_size=.7, random_state=42)
             train_dev_dataset = image_datasets.select_from_indices(list(train_dev_idx), mode='train')
-            sub_groups= np.array([f.identifier for f in train_dev_dataset.features])
+            sub_groups = np.array([f.identifier for f in train_dev_dataset.features])
 
             train_idx, dev_idx = next(sub_gss.split(range(len(train_dev_dataset)),groups=sub_groups))
+            # uncomment for training
             train_dataset = train_dev_dataset.select_from_indices(list(train_idx), mode='train')
             dev_dataset = train_dev_dataset.select_from_indices(list(dev_idx), mode='dev')
+            print(len(train_dev_dataset),len(train_dataset), len(dev_dataset))
 
             global_step, tr_loss , best_loss= train(args, train_dataset, model, label_list, dev_dataset=dev_dataset,cv_idx=cv_idx)
             logger.info(" global_step = %s, average loss = %s, best loss on dev= %s", global_step, tr_loss, best_loss)
@@ -702,6 +776,7 @@ def main():
             # Evaluation
             results = {}
             if args.do_eval and args.local_rank in [-1, 0]:
+
                 checkpoints =  [os.path.join(args.output_dir,str(cv_idx))]
                 if args.eval_all_checkpoints:
                     checkpoints = list(
@@ -714,10 +789,24 @@ def main():
                     global_step = checkpoint.split("-")[-1] if len(checkpoints) > 1 else ""
                     prefix = f'test-set_{cv_idx}'
 
-                    model = classifier(num_labels_per_task={c:4 for c in label_list.keys()})
+                    if args.binary:
+                        model = classifier(num_labels_per_task={1: 0})
+                    elif args.multiLabelAndBinary:
+                        model = classifier(num_labels_per_task={**processor.class2id, **{4: "Class"}})
+                    elif args.multiTask:
+                        model = classifier(num_labels_per_task={c: 4 for c in processor.class2id.keys()})
+                    else:
+                        model = classifier(num_labels_per_task=processor.class2id)
+
                     model_dict = model.state_dict()
-                    pretrained_dict = torch.load(os.path.join(checkpoint, 'pytorch_model.bin'))
+
+                    if torch.cuda.is_available():
+                        map_location = lambda storage, loc: storage.cuda()
+                    else:
+                        map_location = 'cpu'
+                    pretrained_dict = torch.load(os.path.join(checkpoint, 'pytorch_model.bin'),map_location=map_location)
                     # 1. filter out unnecessary keys
+
                     common_keys = [k for k in model_dict.keys() if k in pretrained_dict.keys()]
                     pretrained_dict = {k: v for k, v in pretrained_dict.items() if k in common_keys}
                     # 2. overwrite entries in the existing state dict
@@ -728,17 +817,21 @@ def main():
                         f"model:{model.__class__.__name__} weights were initialized from {checkpoint}.\n")
                     model.to(args.device)
                     eval_dataset = image_datasets.select_from_indices(list(test_idx), mode='test')
-                    result, _= evaluate(args, eval_dataset, model, label_list, prefix=prefix)
+                    import time
+                    start_time = time.time()
+                    result, _ = evaluate(args, eval_dataset, model, label_list, prefix=prefix)
+                    logger.info(f"{len(eval_dataset)}-- in {(time.time() - start_time)} seconds")
                     result = dict((k + "_{}".format(global_step), v) for k, v in result.items())
                     results.update(result)
                     print(results)
             results_cv[cv_idx].append(results)
         print(results_cv)
-    return results_cv
+        return results_cv
 
 if __name__ == "__main__":
     main()
 
 
+#1724 1137 587
 
 

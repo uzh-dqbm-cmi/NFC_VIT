@@ -5,6 +5,7 @@ from skmultilearn.model_selection import IterativeStratification
 import csv
 import re
 import pickle
+import pandas as pd
 import numpy as np
 import dataclasses
 import json
@@ -67,10 +68,13 @@ class InputExample:
     findings: str=None
     images: List[str]=None
     multi_task_labels: Optional[List[str]] = None
-    multi_labels:Optional[List[str]] = None
+    multi_labels : Optional[List[str]] = None
     identifier: Optional[str]=None
-    dateTime:Optional[str]=None
+    dateTime : Optional[str]=None
     originalFileName: Optional[str]=None
+    finger : int=None
+    label :int = None
+    multi_labels_with_binary:Optional[List[str]]=None
     def to_json_string(self):
         """Serializes this instance to a JSON string."""
         return json.dumps(dataclasses.asdict(self), indent=2) + "\n"
@@ -86,6 +90,10 @@ class InputFeatures:
     multi_task_labels:Optional[Union[int, float]] = None
     multi_labels:Optional[Union[int, float]] = None
 
+    finger_index:Optional[int]= None
+    label :Optional[int]= None
+    multi_labels_with_binary: Optional[List[str]]=None
+
     def to_json_string(self):
         """Serializes this instance to a JSON string."""
         return json.dumps(dataclasses.asdict(self)) + "\n"
@@ -98,19 +106,39 @@ class NailImageProcessor(DataProcessor):
     def __init__(self, args):
 
         self.data_dir= args.data_dir
-        self.args=args
-        self.class_names = ["dilatierte", "riesen", "rare", "mikro"]
+        self.args = args
+
+        self.class_names = ["finger_dilatierte", "finger_riesen", "finger_rare", "finger_mikro", "finger_Dysang"]
+        #self.class_names = [ "finger_riesen", "finger_rare", "finger_Dysang"]
+        ''' 
+        finger_dilatierte: 'enlarged capillaries', 
+        finger_riesen':'giant capillaries'
+        finger_rare' :'capillary loss',
+        'finger_mikro': 'microhaemorrhages'
+        '''
+
         self.label2id = {
             0: '0',
             1: '+',
             2: '++',
             3: '+++',
         }
-        self.id2lable={v:k for k,v in self.label2id.items()}
 
-        self.class2id={class_name : idx for idx, class_name in enumerate(self.class_names)}
+        self.id2lable = {v:k for k,v in self.label2id.items()}
+        self.finge2id={
+            "2li": 0,
+            "3li": 1,
+            "4li": 2,
+            "5li": 3,
+            "2re": 4,
+            "3re": 5,
+            "4re": 6,
+            "5re": 7,
+        }
 
-        self.multi_labels_ids=self.class2id.keys()
+        self.class2id = {class_name : idx for idx, class_name in enumerate(self.class_names)}
+
+        self.multi_labels_ids = self.class2id.keys()
 
         """Creates examples for the training, dev and test sets."""
 
@@ -128,31 +156,59 @@ class NailImageProcessor(DataProcessor):
 
     def get_train_examples(self):
         examples = []
-        lines = self._read_tsv(os.path.join(self.args.data_dir, "dataframe_input_model.csv"))
-        for (i, line) in enumerate(lines[1:]):  # ignore header
-            # multi_label = [0] * len(self.multi_labels)
-            fields = line[0].strip('\n').split(',')
-            idx,identifier,examinationDateTime,fileName,originalFileName,=fields[:5]
-            multi_task_labels = [self.id2lable[l] for l in fields[-4:]]
-            multi_labels=[0 if l==0 else 1 for l in multi_task_labels]
+        cuda_path=os.path.join(self.args.data_dir, "intermediate_files", "2021-01-26_dataframe_input_model.csv")
+        if os.path.exists(cuda_path):
+            df = pd.read_csv(cuda_path, index_col=0)
+        else:
+            df = pd.read_csv(os.path.join(self.args.data_dir, "dataframe_input_model.csv"), index_col=0)
+
+        for index, row in df.iterrows():
+            idx = index,
+            identifier = row['IDENTIFIER']
+            examinationDateTime=row['ExaminationDateTime']
+            fileName=row['FileName']
+            originalFileName=row['OriginalFileName']
+            finger = self.finge2id[row['finger']]
+            try:
+                multi_task_labels = [self.id2lable[l] for l in [row[fi] for fi in self.class_names]]
+            except:
+               continue
+
+            #=IF(OR(NOT(ISBLANK(V5)),COUNTIF(W5,{"*++*";"*xx*"})=1),1,0)
+            scleroderma_pattern = 0
+            if row['finger_riesen']!='0' or row['finger_rare'] in ['++','+++']:
+                scleroderma_pattern = 1
+
+
+            multi_labels = [0 if l == 0 else 1 for l in multi_task_labels]
             guid = "%s-%s" % (idx, identifier)
 
             # image_path=os.path.join(self.data_dir,"images-224",image_path)
-            if not os.path.exists(os.path.join(self.data_dir,"images", fileName)):
-                continue
+            cuda_path=os.path.join(self.data_dir,"content","images")
+            if os.path.exists(cuda_path):
+                if not os.path.exists(os.path.join(self.data_dir,"content","images", fileName)):
+                    continue
+            else:
+                if not os.path.exists(os.path.join(self.data_dir,"images", fileName)):
+                    continue
 
-            examples.append(InputExample(guid=guid,
+
+            examples.append (InputExample(guid=guid,
                                          identifier=identifier,
                                          dateTime=examinationDateTime,
                                          originalFileName=originalFileName,
                                          images=[fileName],
                                          multi_task_labels=multi_task_labels,
-                                         multi_labels=multi_labels
+                                         multi_labels=multi_labels,
+                                         finger=finger,
+                                         label= 1 if 1 in multi_labels else 0,
+                                         #multi_labels_with_binary=multi_labels +[1 if 1 in multi_labels else 0],
+                                         multi_labels_with_binary=multi_labels + [scleroderma_pattern],
                                               )
                                  )
 
-        with open(self.cached_examples_file, 'wb') as f:
-            pickle.dump(examples, f)
+        # with open(self.cached_examples_file, 'wb') as f:
+        #     pickle.dump(examples, f)
         return examples
 
 

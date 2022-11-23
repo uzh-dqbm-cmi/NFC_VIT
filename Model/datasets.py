@@ -90,7 +90,7 @@ class NailImagesDataset(Dataset):
             except KeyError:
                 raise KeyError("mode is not a valid split name")
         # Load data features from cache or dataset file
-        self.mode=mode
+        self.mode = mode
 
         cached_features_file = os.path.join(
             args.data_cache_dir if args.data_cache_dir is not None else args.data_dir,
@@ -102,53 +102,56 @@ class NailImagesDataset(Dataset):
 
         # Make sure only the first process in distributed training processes the dataset,
         # and the others will use the cache.
-        lock_path = cached_features_file + ".lock"
-        with FileLock(lock_path):
-            if os.path.exists(cached_features_file) :
-                start = time.time()
-                self.features = torch.load(cached_features_file)
-                logger.info(
-                    f"Loading features from cached file {cached_features_file} [took %.3f s]", time.time() - start
-                )
-            else:
-                logger.info(f"Creating features from dataset file at {args.data_cache_dir if args.data_cache_dir is not None else args.data_dir}")
-                if mode == Split.dev:
-                    examples = processor.get_dev_examples()
-                elif mode == Split.test:
-                    examples = processor.get_test_examples()
-                elif mode == Split.train:
-                    examples = processor.get_train_examples()
-                else:
-                    examples= processor.get_examples()
+        #lock_path = cached_features_file + ".lock"
+        if mode == Split.dev:
+            examples = processor.get_dev_examples()
+        elif mode == Split.test:
+            examples = processor.get_test_examples()
+        elif mode == Split.train:
+            examples = processor.get_train_examples()
+        else:
+            examples= processor.get_examples()
 
-                if limit_length is not None:
-                    examples = examples[:limit_length]
-
-                self.features = self.xray_convert_examples_to_features(examples)
-                start = time.time()
+        if limit_length is not None:
+            examples = examples[:limit_length]
+        self.features = self.image_convert_examples_to_features(examples)
+        start = time.time()
 
 
-                torch.save(self.features, cached_features_file)
-                # ^ This seems to take a lot of time so I want to investigate why and how we can improve.
-                logger.info(
-                    "Saving features into cached file %s [took %.3f s]", cached_features_file, time.time() - start
-                )
+        #torch.save(self.features, cached_features_file)
+        # ^ This seems to take a lot of time so I want to investigate why and how we can improve.
+        # logger.info(
+        #     "Saving features into cached file %s [took %.3f s]", cached_features_file, time.time() - start
+        # )
 
     def __len__(self):
         return len(self.features)
 
     def __getitem__(self, i):
         feature=self.features[i]
+
         #@todo if we have only one image?
         img = image_to_tensor_ten_crop_auto_augment(feature.img, mode=self.mode)
         multi_labels = torch.tensor(feature.multi_labels, dtype=torch.long)
         multi_task_labels = torch.tensor(feature.multi_task_labels, dtype=torch.long)
-        return img, multi_labels, multi_task_labels
+        finger_index=torch.tensor(feature.finger_index, dtype=torch.long)
+        img_id = feature.img
+        label = torch.tensor(feature.label, dtype=torch.long)
+        multi_labels_with_binary = torch.tensor(feature.multi_labels_with_binary, dtype=torch.long)
+
+        items={"img_id":img_id,
+                "img":img,
+                "finger_index": finger_index,
+                "label":label,
+                "multi_labels":multi_labels,
+                "multi_task_labels":multi_task_labels,
+                "multi_labels_with_binary":multi_labels_with_binary
+                }
+
+        return  img_id,img, finger_index, label, multi_labels, multi_task_labels, multi_labels_with_binary
 
 
-    def xray_convert_examples_to_features(self,
-                                           examples: List[InputExample],
-                                           ):
+    def image_convert_examples_to_features(self, examples: List[InputExample],):
 
         features = []
         for example_index, example in tqdm(enumerate(examples)):
@@ -158,14 +161,22 @@ class NailImagesDataset(Dataset):
             #@todo filter the report where it has single image !
             input_images = example.images
             # @todo how to detect which image is lateral and which one is frontal
-            img = os.path.join(self.args.data_dir,"images", input_images[0])
+            cuda_path = os.path.join(self.args.data_dir,"content","images")
+            if os.path.exists(cuda_path):
+                img = os.path.join(self.args.data_dir,"content","images", input_images[0])
+            else:
+                img = os.path.join(self.args.data_dir,"images", input_images[0])
+
             # #if self.mode==Split.train:
             # if self.mode==Split.train and not self.args.autoAugment:
             #     img1= image_to_tensor_ten_crop(img1, self.mode)
-            inputs = {"identifier":example.identifier,
+            inputs = {"identifier": example.identifier,
                       "img": img,
+                      "finger_index" : example.finger,
                       "multi_labels": example.multi_labels,
-                      "multi_task_labels":example.multi_task_labels
+                      "multi_task_labels": example.multi_task_labels,
+                      "label":example.label,
+                      "multi_labels_with_binary":example.multi_labels_with_binary,
                       }
             feature = InputFeatures(**inputs)
             features.append(feature)

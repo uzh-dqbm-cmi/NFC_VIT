@@ -20,15 +20,22 @@ for some einops/einsum fun
 
 Hacked together by / Copyright 2020 Ross Wightman
 """
+
+
 import torch
 import torch.nn as nn
 from functools import partial
-
+import os
+import torch.utils.model_zoo as model_zoo
+import math
 from timm.data import IMAGENET_DEFAULT_MEAN, IMAGENET_DEFAULT_STD
-from timm.models.helpers import load_pretrained
+# from timm.models.helpers import load_pretrained
 from timm.models.layers import DropPath, to_2tuple, trunc_normal_
 from timm.models.resnet import resnet26d, resnet50d
 from timm.models.registry import register_model
+import logging
+
+_logger = logging.getLogger(__name__)
 
 
 def _cfg(url='', **kwargs):
@@ -63,7 +70,10 @@ default_cfgs = {
     'vit_large_patch16_384': _cfg(
         url='https://github.com/rwightman/pytorch-image-models/releases/download/v0.1-vitjx/jx_vit_large_p16_384-b3be5167.pth',
         input_size=(3, 384, 384), mean=(0.5, 0.5, 0.5), std=(0.5, 0.5, 0.5), crop_pct=1.0),
+
     'vit_large_patch32_384': _cfg(
+        # to run the model on LeoMed
+        model_path='/cluster/home/fnooralahzad/models/jx_vit_large_p32_384-9b920ba8.pth',
         url='https://github.com/rwightman/pytorch-image-models/releases/download/v0.1-vitjx/jx_vit_large_p32_384-9b920ba8.pth',
         input_size=(3, 384, 384), mean=(0.5, 0.5, 0.5), std=(0.5, 0.5, 0.5), crop_pct=1.0),
     'vit_huge_patch16_224': _cfg(),
@@ -221,6 +231,8 @@ class VisionTransformer(nn.Module):
 
         self.cls_token = nn.Parameter(torch.zeros(1, 1, embed_dim))
         self.pos_embed = nn.Parameter(torch.zeros(1, num_patches + 1, embed_dim))
+        #self.type_embed = nn.Embedding(8, embed_dim)
+
         self.pos_drop = nn.Dropout(p=drop_rate)
 
         dpr = [x.item() for x in torch.linspace(0, drop_path_rate, depth)]  # stochastic depth decay rule
@@ -240,6 +252,7 @@ class VisionTransformer(nn.Module):
 
         trunc_normal_(self.pos_embed, std=.02)
         trunc_normal_(self.cls_token, std=.02)
+        #trunc_normal_(self.type_embed, std=.02)
         self.apply(self._init_weights)
 
     def _init_weights(self, m):
@@ -262,13 +275,20 @@ class VisionTransformer(nn.Module):
         self.num_classes = num_classes
         self.head = nn.Linear(self.embed_dim, num_classes) if num_classes > 0 else nn.Identity()
 
-    def forward_features(self, x):
+    def forward_features(self, x, finger_index=None):
         B = x.shape[0]
         x = self.patch_embed(x)
 
         cls_tokens = self.cls_token.expand(B, -1, -1)  # stole cls_tokens impl from Phil Wang, thanks
         x = torch.cat((cls_tokens, x), dim=1)
+        # finger index embedding
+
+        # if fi is not None:
+        #     fim = self.type_embed(fi)
+        #     x= x + self.pos_embed + fi
+        # else:
         x = x + self.pos_embed
+
         x = self.pos_drop(x)
 
         for blk in self.blocks:
@@ -298,8 +318,8 @@ class VisionTransformer(nn.Module):
         x = self.head(x)
         return x
 
-    def forward(self, x):
-        x = self.forward_features(x)
+    def forward(self, x, finger_index=None):
+        x = self.forward_features(x,finger_index)
         x = self.head(x)
         return x
 
@@ -322,7 +342,7 @@ def vit_small_patch16_224(pretrained=False, **kwargs):
     model = VisionTransformer(patch_size=16, embed_dim=768, depth=8, num_heads=8, mlp_ratio=3., **kwargs)
     model.default_cfg = default_cfgs['vit_small_patch16_224']
     if pretrained:
-        load_pretrained(
+        load_pretrained_(
             model, num_classes=model.num_classes, in_chans=kwargs.get('in_chans', 3), filter_fn=_conv_filter)
     return model
 
@@ -334,7 +354,7 @@ def vit_base_patch16_224(pretrained=False, **kwargs):
         norm_layer=partial(nn.LayerNorm, eps=1e-6), **kwargs)
     model.default_cfg = default_cfgs['vit_base_patch16_224']
     if pretrained:
-        load_pretrained(
+        load_pretrained_(
             model, num_classes=model.num_classes, in_chans=kwargs.get('in_chans', 3), filter_fn=_conv_filter)
     return model
 
@@ -346,7 +366,7 @@ def vit_base_patch16_384(pretrained=False, **kwargs):
         norm_layer=partial(nn.LayerNorm, eps=1e-6), **kwargs)
     model.default_cfg = default_cfgs['vit_base_patch16_384']
     if pretrained:
-        load_pretrained(model, num_classes=model.num_classes, in_chans=kwargs.get('in_chans', 3))
+        load_pretrained_(model, num_classes=model.num_classes, in_chans=kwargs.get('in_chans', 3))
     return model
 
 
@@ -357,7 +377,7 @@ def vit_base_patch32_384(pretrained=False, **kwargs):
         norm_layer=partial(nn.LayerNorm, eps=1e-6), **kwargs)
     model.default_cfg = default_cfgs['vit_base_patch32_384']
     if pretrained:
-        load_pretrained(model, num_classes=model.num_classes, in_chans=kwargs.get('in_chans', 3))
+        load_pretrained_(model, num_classes=model.num_classes, in_chans=kwargs.get('in_chans', 3))
     return model
 
 
@@ -368,7 +388,7 @@ def vit_large_patch16_224(pretrained=False, **kwargs):
         norm_layer=partial(nn.LayerNorm, eps=1e-6), **kwargs)
     model.default_cfg = default_cfgs['vit_large_patch16_224']
     if pretrained:
-        load_pretrained(model, num_classes=model.num_classes, in_chans=kwargs.get('in_chans', 3))
+        load_pretrained_(model, num_classes=model.num_classes, in_chans=kwargs.get('in_chans', 3))
     return model
 
 
@@ -379,7 +399,7 @@ def vit_large_patch16_384(pretrained=False, **kwargs):
         norm_layer=partial(nn.LayerNorm, eps=1e-6), **kwargs)
     model.default_cfg = default_cfgs['vit_large_patch16_384']
     if pretrained:
-        load_pretrained(model, num_classes=model.num_classes, in_chans=kwargs.get('in_chans', 3))
+        load_pretrained_(model, num_classes=model.num_classes, in_chans=kwargs.get('in_chans', 3))
     return model
 
 
@@ -390,7 +410,7 @@ def vit_large_patch32_384(pretrained=False, **kwargs):
         norm_layer=partial(nn.LayerNorm, eps=1e-6), **kwargs)
     model.default_cfg = default_cfgs['vit_large_patch32_384']
     if pretrained:
-        load_pretrained(model, num_classes=model.num_classes, in_chans=kwargs.get('in_chans', 3))
+        load_pretrained_(model, num_classes=model.num_classes, in_chans=kwargs.get('in_chans', 3))
     return model
 
 
@@ -448,7 +468,6 @@ def vit_base_resnet50d_224(pretrained=False, **kwargs):
     model.default_cfg = default_cfgs['vit_base_resnet50d_224']
     return model
 
-
 visual_transoformer={
     "vit_base_resnet26d_224":vit_base_resnet26d_224,
     "vit_base_resnet50d_224":vit_base_resnet50d_224,
@@ -464,3 +483,70 @@ visual_transoformer={
     "vit_base_patch16_384":vit_base_patch16_384,
 
 }
+
+
+def load_pretrained_(model, cfg=None, num_classes=1000, in_chans=3, filter_fn=None, strict=True):
+    if cfg is None:
+        cfg = getattr(model, 'default_cfg')
+    if cfg is None or 'url' not in cfg or not cfg['url']:
+        _logger.warning("Pretrained model URL is invalid, using random initialization.")
+        return
+    if os.path.exists(cfg['model_path']):
+        state_dict = torch.load(cfg['model_path'], map_location='cpu')
+    else:
+        state_dict = model_zoo.load_url(cfg['url'], progress=False, map_location='cpu')
+
+    if filter_fn is not None:
+        state_dict = filter_fn(state_dict)
+
+    if in_chans == 1:
+        conv1_name = cfg['first_conv']
+        _logger.info('Converting first conv (%s) pretrained weights from 3 to 1 channel' % conv1_name)
+        conv1_weight = state_dict[conv1_name + '.weight']
+        # Some weights are in torch.half, ensure it's float for sum on CPU
+        conv1_type = conv1_weight.dtype
+        conv1_weight = conv1_weight.float()
+        O, I, J, K = conv1_weight.shape
+        if I > 3:
+            assert conv1_weight.shape[1] % 3 == 0
+            # For models with space2depth stems
+            conv1_weight = conv1_weight.reshape(O, I // 3, 3, J, K)
+            conv1_weight = conv1_weight.sum(dim=2, keepdim=False)
+        else:
+            conv1_weight = conv1_weight.sum(dim=1, keepdim=True)
+        conv1_weight = conv1_weight.to(conv1_type)
+        state_dict[conv1_name + '.weight'] = conv1_weight
+    elif in_chans != 3:
+        conv1_name = cfg['first_conv']
+        conv1_weight = state_dict[conv1_name + '.weight']
+        conv1_type = conv1_weight.dtype
+        conv1_weight = conv1_weight.float()
+        O, I, J, K = conv1_weight.shape
+        if I != 3:
+            _logger.warning('Deleting first conv (%s) from pretrained weights.' % conv1_name)
+            del state_dict[conv1_name + '.weight']
+            strict = False
+        else:
+            # NOTE this strategy should be better than random init, but there could be other combinations of
+            # the original RGB input layer weights that'd work better for specific cases.
+            _logger.info('Repeating first conv (%s) weights in channel dim.' % conv1_name)
+            repeat = int(math.ceil(in_chans / 3))
+            conv1_weight = conv1_weight.repeat(1, repeat, 1, 1)[:, :in_chans, :, :]
+            conv1_weight *= (3 / float(in_chans))
+            conv1_weight = conv1_weight.to(conv1_type)
+            state_dict[conv1_name + '.weight'] = conv1_weight
+
+    classifier_name = cfg['classifier']
+    if num_classes == 1000 and cfg['num_classes'] == 1001:
+        # special case for imagenet trained models with extra background class in pretrained weights
+        classifier_weight = state_dict[classifier_name + '.weight']
+        state_dict[classifier_name + '.weight'] = classifier_weight[1:]
+        classifier_bias = state_dict[classifier_name + '.bias']
+        state_dict[classifier_name + '.bias'] = classifier_bias[1:]
+    elif num_classes != cfg['num_classes']:
+        # completely discard fully connected for all other differences between pretrained and created model
+        del state_dict[classifier_name + '.weight']
+        del state_dict[classifier_name + '.bias']
+        strict = False
+
+    model.load_state_dict(state_dict, strict=strict)
