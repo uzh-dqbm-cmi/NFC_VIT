@@ -150,3 +150,8 @@ Dataset statistic.ipynb
 self_supervised_learning.py
 
 
+
+# Allow inference demo notebook + outputs
+!infer_examples.ipynb
+!infer_examples_outputs/
+!infer_examples_outputs/**

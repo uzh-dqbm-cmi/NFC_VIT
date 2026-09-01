@@ -87,3 +87,10 @@ python train.py \
 | `Model/` | Model, datasets, processors |
 | `train.py` | Training / CV evaluation |
 | `job.sh` / `job-eval.sh` | Cluster job examples |
+
+## Example notebook (one image per class)
+
+Run or view the executed demo:
+
+- [`infer_examples.ipynb`](infer_examples.ipynb) — picks one fold-0 test image per severity class for each task and compares GT vs prediction
+- Outputs: [`infer_examples_outputs/`](infer_examples_outputs/) (`summary.csv` + per-task PNGs)
