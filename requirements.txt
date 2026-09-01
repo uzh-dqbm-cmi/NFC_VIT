@@ -1,0 +1,22 @@
+# Inference environment for NFC_VIT (multi-task ViT)
+# Python 3.9 recommended
+#
+# Install PyTorch first (pick ONE):
+#   CPU:
+#     pip install torch==1.10.1 torchvision==0.11.2
+#   GPU (CUDA 11.3):
+#     pip install torch==1.10.1+cu113 torchvision==0.11.2+cu113 -f https://download.pytorch.org/whl/torch_stable.html
+#
+# Then:
+#   pip install -r requirements.txt
+
+torch==1.10.1
+torchvision==0.11.2
+timm==0.5.4
+Pillow==9.0.0
+numpy==1.20.3
+tqdm==4.62.3
+pandas==1.3.4
+matplotlib==3.5.1
+ipython==7.29.0
+jupyter==1.0.0
