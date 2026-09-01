@@ -148,3 +148,4 @@ wandb/*
 .ipynb_checkpoints
 Dataset statistic.ipynb
 self_supervised_learning.py
+infer_examples_outputs/
