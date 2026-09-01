@@ -1,5 +1,5 @@
 python train.py \
---data_dir   /opt/data/capillaroscopy/  \
+--data_dir   /cluster/dataset/medinfmk/capillaroscopy/  \
 --output_dir  /cluster/home/fnooralahzad/nail_img_results/ \
 --do_train \
 --do_eval \
