@@ -1,6 +1,6 @@
 python train.py \
 --data_dir   /cluster/dataset/medinfmk/capillaroscopy/  \
---output_dir  /cluster/home/fnooralahzad/nail_img_results/multiTask \
+--output_dir  /cluster/dataset/medinfmk/capillaroscopy/Nail-Imaging/multi-task/multiTask \
 --do_train \
 --do_eval \
 --early_stopping \

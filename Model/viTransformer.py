@@ -73,7 +73,7 @@ default_cfgs = {
 
     'vit_large_patch32_384': _cfg(
         # to run the model on LeoMed
-        model_path='/cluster/home/fnooralahzad/models/jx_vit_large_p32_384-9b920ba8.pth',
+        model_path='/cluster/dataset/medinfmk/capillaroscopy/models/jx_vit_large_p32_384-9b920ba8.pth',
         url='https://github.com/rwightman/pytorch-image-models/releases/download/v0.1-vitjx/jx_vit_large_p32_384-9b920ba8.pth',
         input_size=(3, 384, 384), mean=(0.5, 0.5, 0.5), std=(0.5, 0.5, 0.5), crop_pct=1.0),
     'vit_huge_patch16_224': _cfg(),
